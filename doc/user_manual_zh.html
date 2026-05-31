@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>raven-onnxruntime 使用手册</title>
+<style>
+:root{--primary:#2563eb;--bg:#f8fafc;--sidebar-bg:#1e293b;--sidebar-text:#cbd5e1;--sidebar-active:#3b82f6;--text:#1e293b;--text-light:#64748b;--border:#e2e8f0;--code-bg:#1e293b;--code-text:#e2e8f0;--card-bg:#fff;--tag-bg:#eff6ff;--tag-text:#2563eb;--success:#16a34a;--warning:#d97706;--danger:#dc2626;--info:#0891b2}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans SC",sans-serif;background:var(--bg);color:var(--text);line-height:1.7}
+a{color:var(--primary);text-decoration:none}a:hover{text-decoration:underline}
+.sidebar{position:fixed;top:0;left:0;width:280px;height:100vh;background:var(--sidebar-bg);color:var(--sidebar-text);overflow-y:auto;z-index:100;padding:24px 0;scrollbar-width:thin;scrollbar-color:#475569 transparent}
+.sidebar::-webkit-scrollbar{width:6px}.sidebar::-webkit-scrollbar-thumb{background:#475569;border-radius:3px}
+.sidebar-header{padding:0 24px 20px;border-bottom:1px solid #334155;margin-bottom:12px}
+.sidebar-header h2{font-size:18px;color:#f1f5f9;font-weight:700}
+.sidebar-header p{font-size:12px;color:#94a3b8;margin-top:4px}
+.nav-section{padding:8px 0}
+.nav-section-title{padding:8px 24px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#64748b;font-weight:600}
+.nav-item{display:block;padding:6px 24px 6px 32px;font-size:13px;color:var(--sidebar-text);transition:all .15s;border-left:3px solid transparent}
+.nav-item:hover{background:#334155;color:#f1f5f9;text-decoration:none}
+.nav-item.sub{padding-left:44px;font-size:12px}
+.main{margin-left:280px;padding:40px 48px;max-width:960px}
+.main h1{font-size:32px;font-weight:800;margin-bottom:8px}
+.main h2{font-size:24px;font-weight:700;margin:48px 0 16px;padding-bottom:8px;border-bottom:2px solid var(--primary)}
+.main h3{font-size:18px;font-weight:600;margin:32px 0 12px}
+.main h4{font-size:15px;font-weight:600;margin:20px 0 8px}
+.main p{margin:8px 0}.main ul,.main ol{margin:8px 0 8px 24px}.main li{margin:4px 0}
+.hero{background:linear-gradient(135deg,#1e3a8a 0%,#3b82f6 100%);color:#fff;padding:48px;border-radius:16px;margin-bottom:40px}
+.hero h1{color:#fff;font-size:36px;border:none;margin-bottom:12px}
+.hero p{color:#bfdbfe;font-size:16px}
+.hero .badges{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap}
+.hero .badge{display:inline-block;padding:4px 12px;background:rgba(255,255,255,.15);border-radius:20px;font-size:13px;color:#e0f2fe}
+.card{background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:24px;margin:16px 0}
+.card h3,.card h4{margin-top:0}
+pre{background:var(--code-bg);color:var(--code-text);padding:20px;border-radius:10px;overflow-x:auto;margin:12px 0;font-size:13px;line-height:1.6;font-family:"JetBrains Mono","Fira Code","Cascadia Code",Consolas,monospace}
+code{font-family:"JetBrains Mono","Fira Code","Cascadia Code",Consolas,monospace;font-size:13px}
+.ic{background:#f1f5f9;color:var(--danger);padding:2px 6px;border-radius:4px;font-size:12px}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px}
+th{background:#f1f5f9;font-weight:600;text-align:left}th,td{padding:10px 14px;border:1px solid var(--border)}tr:nth-child(even) td{background:#f8fafc}
+.tag{display:inline-block;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:500}
+.tag-blue{background:var(--tag-bg);color:var(--tag-text)}.tag-green{background:#f0fdf4;color:var(--success)}.tag-orange{background:#fffbeb;color:var(--warning)}.tag-cyan{background:#ecfeff;color:var(--info)}
+.tip{background:#eff6ff;border-left:4px solid var(--primary);padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+.tip-title{font-weight:600;color:var(--primary);margin-bottom:4px}
+.warn{background:#fffbeb;border-left:4px solid var(--warning);padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+.warn-title{font-weight:600;color:var(--warning);margin-bottom:4px}
+.danger{background:#fef2f2;border-left:4px solid var(--danger);padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+.danger-title{font-weight:600;color:var(--danger);margin-bottom:4px}
+.arch{background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:24px;margin:16px 0;font-family:"JetBrains Mono","Fira Code",Consolas,monospace;font-size:13px;line-height:1.5;white-space:pre;overflow-x:auto}
+.flow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}
+.flow-step{background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:8px 16px;font-size:13px;font-weight:500}
+.flow-arrow{color:var(--text-light);font-size:18px}
+.sa{scroll-margin-top:20px}
+@media(max-width:900px){.sidebar{display:none}.main{margin-left:0;padding:24px}}
+</style>
+</head>
+<body>
+<nav class="sidebar">
+<div class="sidebar-header"><h2>raven-onnxruntime</h2><p>Zero-CGO ONNX Runtime Go 推理框架</p></div>
+<div class="nav-section"><div class="nav-section-title">快速开始</div>
+<a class="nav-item" href="#overview">项目概述</a>
+<a class="nav-item" href="#features">核心特性</a>
+<a class="nav-item" href="#quickstart">快速上手</a></div>
+<div class="nav-section"><div class="nav-section-title">架构设计</div>
+<a class="nav-item" href="#architecture">整体架构</a>
+<a class="nav-item" href="#ort-package">ort 底层绑定</a>
+<a class="nav-item" href="#vision-package">vision 高层封装</a></div>
+<div class="nav-section"><div class="nav-section-title">模型引擎</div>
+<a class="nav-item" href="#yolo26">YOLO26</a>
+<a class="nav-item sub" href="#yolo26-det">目标检测</a>
+<a class="nav-item sub" href="#yolo26-seg">实例分割</a>
+<a class="nav-item sub" href="#yolo26-pose">姿态估计</a>
+<a class="nav-item sub" href="#yolo26-obb">旋转检测</a>
+<a class="nav-item sub" href="#yolo26-cls">图像分类</a>
+<a class="nav-item" href="#yolov11">YOLOv11</a>
+<a class="nav-item" href="#sam2">SAM2</a>
+<a class="nav-item" href="#sam3">SAM3 / SAM3.1</a>
+<a class="nav-item" href="#rfdetr">RF-DETR</a></div>
+<div class="nav-section"><div class="nav-section-title">进阶主题</div>
+<a class="nav-item" href="#batch">批量推理</a>
+<a class="nav-item" href="#pipeline">模型流水线</a>
+<a class="nav-item" href="#cuda">CUDA 加速</a>
+<a class="nav-item" href="#session-opts">Session 配置</a>
+<a class="nav-item" href="#logging">日志系统</a>
+<a class="nav-item" href="#api-ver">API 版本协商</a></div>
+<div class="nav-section"><div class="nav-section-title">参考</div>
+<a class="nav-item" href="#api-ref">API 速查</a>
+<a class="nav-item" href="#faq">常见问题</a></div>
+</nav>
+
+<main class="main">
+<div class="hero">
+<h1>raven-onnxruntime 使用手册</h1>
+<p>基于 purego 的 Zero-CGO ONNX Runtime Go 推理框架，提供 YOLO26 / YOLOv11 / SAM2 / SAM3 / RF-DETR 等模型的即用型封装</p>
+<div class="badges"><span class="badge">Go 1.24+</span><span class="badge">Zero-CGO</span><span class="badge">CUDA 支持</span><span class="badge">批量推理</span></div>
+</div>
+
+<h2 id="overview" class="sa">项目概述</h2>
+<p><strong>raven-onnxruntime</strong> 是一个 Go 语言推理库，基于 <a href="https://github.com/microsoft/onnxruntime">ONNX Runtime</a>，使用 <a href="https://github.com/ebitengine/purego">purego</a> 实现 Zero-CGO 调用 ONNX Runtime 共享库，提供 YOLO 模型系列和 SAM2/SAM3 的即用型封装。</p>
+<p>本项目是 <a href="https://github.com/GetcharZp/go-vision">go-vision</a> 和 <a href="https://github.com/GetcharZp/onnxruntime_purego">onnxruntime_purego</a> 的合并版本，并在性能和稳定性上进行了大量改进。</p>
+
+<h3>项目结构</h3>
+<pre>raven-onnxruntime/
+├── ort/                        # ONNX Runtime 底层绑定
+│   ├── api.go                  # ONNX C API 结构体与 purego 函数绑定
+│   ├── onnxruntime.go          # Engine 初始化、API 注册、错误码映射
+│   ├── session.go              # Session / SessionOptions 管理
+│   ├── value.go                # Tensor 创建与数据访问
+│   ├── utils.go                # 通用工具函数
+│   ├── utils_unix.go           # Unix 平台适配
+│   ├── utils_windows.go        # Windows 平台适配
+│   ├── internal/sys/           # 动态库加载（跨平台）
+│   └── ortlog/                 # 结构化日志包
+├── vision/                     # 计算机视觉模型封装
+│   ├── onnx.go                 # OnnxConfig 全局 Engine 单例与 Session 选项
+│   ├── draw.go                 # 检测框/标签渲染
+│   ├── yolo26/                 # YOLO26 模型 (det/seg/pose/obb/cls)
+│   ├── yolov11/                # YOLOv11 模型 (det/seg/pose/obb/cls)
+│   ├── sam2/                   # SAM2 图像分割
+│   ├── sam3/                   # SAM3/SAM3.1 图像分割
+│   └── rfdetr/                 # RF-DETR 模型 (det/seg)
+├── include/                    # ONNX Runtime C API 头文件
+├── examples/                   # 使用示例
+├── go.mod
+└── go.sum</pre>
+
+<h2 id="features" class="sa">核心特性</h2>
+<table>
+<thead><tr><th>特性</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><span class="tag tag-blue">Zero-CGO</span></td><td>使用 purego 调用 C 共享库，无需 C 编译器，交叉编译零障碍</td></tr>
+<tr><td><span class="tag tag-green">批量推理</span></td><td>YOLO26 和 RF-DETR 支持 PredictBatch，充分利用 GPU 并行能力</td></tr>
+<tr><td><span class="tag tag-cyan">CUDA 加速</span></td><td>可选启用 CUDA Execution Provider，GPU 推理显著提速</td></tr>
+<tr><td><span class="tag tag-orange">API 版本协商</span></td><td>支持 API 版本自动降级，兼容不同版本的 ONNX Runtime 共享库</td></tr>
+<tr><td><span class="tag tag-blue">动态 I/O</span></td><td>动态获取模型输入/输出名称，兼容不同导出工具链</td></tr>
+<tr><td><span class="tag tag-green">分段计时</span></td><td>每 60 帧输出预处理/推理/后处理分段耗时统计</td></tr>
+<tr><td><span class="tag tag-cyan">可重试单例</span></td><td>Engine 单例支持失败重试，不会因 DLL 加载失败而永久卡死</td></tr>
+<tr><td><span class="tag tag-orange">可读错误码</span></td><td>ONNX 错误码映射为可读字符串，快速定位问题</td></tr>
+</tbody></table>
+
+<h2 id="quickstart" class="sa">快速上手</h2>
+<h3>环境要求</h3>
+<ul>
+<li>Go 1.24+</li>
+<li>ONNX Runtime 共享库（<code class="ic">onnxruntime.dll</code> / <code class="ic">libonnxruntime.so</code> / <code class="ic">libonnxruntime.dylib</code>）</li>
+<li>（可选）NVIDIA GPU + CUDA 以启用 GPU 加速</li>
+</ul>
+<h3>安装</h3>
+<pre>go get github.com/DavidSche/raven-onnxruntime</pre>
+
+<h3>最小示例：YOLO26 目标检测</h3>
+<pre>package main
+
+import (
+    "fmt"
+    "github.com/DavidSche/raven-onnxruntime/vision/yolo26"
+    "github.com/up-zero/gotool/imageutil"
+)
+
+func main() {
+    cfg := yolo26.DefaultDetConfig()
+    cfg.ModelPath = "models/yolo26m.onnx"
+    cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+    cfg.UseCuda = true
+
+    engine, err := yolo26.NewDetEngine(cfg)
+    if err != nil { panic(err) }
+    defer engine.Destroy()
+
+    img, _ := imageutil.Open("test.jpg")
+    results, err := engine.Predict(img)
+    if err != nil { panic(err) }
+
+    for _, res := range results {
+        fmt.Printf("ClassID: %d, Score: %.2f, Box: %v\n",
+            res.ClassID, res.Score, res.Box)
+    }
+}</pre>
+
+<div class="tip"><div class="tip-title">提示</div><p>所有引擎都遵循相同的模式：<strong>创建配置 → 创建引擎 → 调用 Predict → 处理结果 → Destroy 释放资源</strong>。只需替换引擎类型和配置即可切换不同模型。</p></div>
+
+<h2 id="architecture" class="sa">整体架构</h2>
+<p>raven-onnxruntime 采用两层架构设计：</p>
+<div class="arch">┌─────────────────────────────────────────────────────────────┐
+│                     应用层 (Your Code)                        │
+├─────────────────────────────────────────────────────────────┤
+│                   vision 高层封装                             │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────┐ ┌───────┐ │
+│  │  YOLO26  │ │ YOLOv11  │ │   SAM2   │ │ SAM3 │ │RF-DETR│ │
+│  │det/seg/  │ │det/seg/  │ │  分割    │ │ 分割 │ │det/seg│ │
+│  │pose/obb/ │ │pose/obb/ │ │          │ │      │ │       │ │
+│  │cls       │ │cls       │ │          │ │      │ │       │ │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └──┬───┘ └──┬────┘ │
+│       └─────────────┴────────────┴──────────┴─────────┘      │
+│                           │                                   │
+│                    OnnxConfig.New()                           │
+│                    (全局 Engine 单例)                          │
+├─────────────────────────────────────────────────────────────┤
+│                    ort 底层绑定                                │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
+│  │  Engine  │ │ Session  │ │  Value   │ │  ortlog  │       │
+│  │(API注册) │ │(推理会话) │ │(张量操作) │ │ (日志)   │       │
+│  └────┬─────┘ └──────────┘ └──────────┘ └──────────┘       │
+│       │  purego (Zero-CGO)                                   │
+│       ▼                                                      │
+├─────────────────────────────────────────────────────────────┤
+│            ONNX Runtime 共享库 (DLL/SO/DYLIB)                │
+└─────────────────────────────────────────────────────────────┘</div>
+
+<h3>设计理念</h3>
+<ul>
+<li><strong>ort 层</strong>：对 ONNX Runtime C API 的完整 Go 绑定，负责动态库加载、API 注册、Session 管理、Tensor 创建与数据访问。开发者可直接使用 ort 层进行底层操作。</li>
+<li><strong>vision 层</strong>：在 ort 层之上提供计算机视觉模型的高级封装，每个模型一个子包，包含预处理、推理、后处理的完整流程，开箱即用。</li>
+<li><strong>全局 Engine 单例</strong>：vision 层通过 <code class="ic">OnnxConfig.New()</code> 初始化全局 Engine 单例，整个进程只加载一次 DLL，所有模型共享同一 Engine 实例。</li>
+</ul>
+
+<h2 id="ort-package" class="sa">ort 底层绑定</h2>
+<p><code class="ic">ort</code> 包是 ONNX Runtime C API 的 Go 绑定层，使用 purego 实现零 CGO 调用。</p>
+
+<h3>Engine — 推理引擎</h3>
+<p><code class="ic">Engine</code> 是 ONNX Runtime 的核心上下文，负责加载动态库、注册 API、创建环境。</p>
+<pre>import "github.com/DavidSche/raven-onnxruntime/ort"
+
+engine, err := ort.NewEngine("./lib/onnxruntime.dll",
+    ort.WithApiVersion(ort.ApiVersion26))
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+version := engine.GetVersion()
+providers, _ := engine.AvailableProviders()</pre>
+
+<h4>API 版本协商</h4>
+<p>创建 Engine 时，按以下优先级确定 API 版本：</p>
+<ol>
+<li>代码中通过 <code class="ic">WithApiVersion()</code> 指定的版本</li>
+<li>环境变量 <code class="ic">ORT_API_VERSION</code> 的值</li>
+<li>默认值 <code class="ic">DefaultApiVersion</code>（当前为 26）</li>
+</ol>
+<p>如果请求的版本不可用，会自动降级到库支持的最高兼容版本。</p>
+
+<h3>Session — 推理会话</h3>
+<p><code class="ic">Session</code> 封装了 ONNX 模型的推理会话，支持动态获取输入/输出名称。</p>
+<pre>opts, err := engine.NewSessionOptions()
+if err != nil { panic(err) }
+defer opts.Destroy()
+
+opts.SetIntraOpNumThreads(4)
+opts.SetInterOpNumThreads(1)
+opts.SetExecutionMode(ort.ExecutionModeSequential)
+opts.SetMemPattern(true)
+opts.SetGraphOptimizationLevel(ort.GraphOptimizationLevelAll)
+opts.SetCpuMemArena(true)
+opts.EnableCUDA()
+
+session, err := engine.NewSession("model.onnx", opts)
+if err != nil { panic(err) }
+defer session.Destroy()
+
+fmt.Println("Inputs:", session.InputNames)
+fmt.Println("Outputs:", session.OutputNames)
+shape, _ := session.GetInputShape(0)</pre>
+
+<h4>Session.Run() — 执行推理</h4>
+<pre>inputData := make([]float32, 1*3*640*640)
+inputTensor, err := engine.NewTensor([]int64{1, 3, 640, 640}, inputData)
+if err != nil { panic(err) }
+defer inputTensor.Destroy()
+
+inputName := session.InputNames[0]
+outputs, err := session.Run(map[string]*ort.Value{inputName: inputTensor})
+if err != nil { panic(err) }
+
+outputName := session.OutputNames[0]
+outputValue := outputs[outputName]
+data, _ := ort.GetTensorData[float32](outputValue)
+shape, _ := outputValue.GetShape()
+defer outputValue.Destroy()</pre>
+
+<div class="tip"><div class="tip-title">性能优化</div><p><code class="ic">Session.Run()</code> 内部对输出名称做了零分配优化（outputNameSlices / outputNamePtrs 在 initMetadata 时一次性分配），输入名称通过 sync.Map 缓存，每次 Run 不再重新分配字节切片。</p></div>
+
+<h3>Value — 张量操作</h3>
+<h4>创建 Tensor</h4>
+<pre>tensor, err := engine.NewTensor([]int64{1, 3, 640, 640}, inputData)
+// 支持: []float32, []float64, []int64, []int32, []int16, []int8,
+//       []uint64, []uint32, []uint16, []uint8, []bool</pre>
+
+<h4>读取 Tensor 数据</h4>
+<pre>data, err := ort.GetTensorData[float32](value)
+shape, err := value.GetShape()
+count, err := value.GetElementCount()</pre>
+
+<div class="warn"><div class="warn-title">注意</div><p>所有 <code class="ic">Value</code> 在使用完毕后必须调用 <code class="ic">Destroy()</code> 释放底层资源，否则会造成内存泄漏。建议使用 <code class="ic">defer value.Destroy()</code> 模式。</p></div>
+
+<h2 id="vision-package" class="sa">vision 高层封装</h2>
+<p><code class="ic">vision</code> 包在 ort 层之上提供计算机视觉模型的即用型封装。核心是 <code class="ic">OnnxConfig</code>，负责初始化全局 Engine 单例和 Session 选项。</p>
+
+<h3>OnnxConfig</h3>
+<pre>type OnnxConfig struct {
+    SessionOptions     *ort.SessionOptions
+    OnnxEngine         *ort.Engine
+    OnnxRuntimeLibPath string  // 必填：ONNX Runtime 动态库路径
+    UseCuda            bool    // 可选：是否启用 CUDA
+    NumThreads         int     // 可选：ONNX 线程数
+    ApiVersion         ort.ApiVersion // 可选：API 版本
+    EnableCpuMemArena  bool    // 可选：是否启用 ONNX 内存池
+}</pre>
+
+<h4>初始化流程</h4>
+<div class="flow">
+<span class="flow-step">创建 OnnxConfig</span><span class="flow-arrow">→</span>
+<span class="flow-step">设置 OnnxRuntimeLibPath</span><span class="flow-arrow">→</span>
+<span class="flow-step">调用 New()</span><span class="flow-arrow">→</span>
+<span class="flow-step">获取 OnnxEngine &amp; SessionOptions</span><span class="flow-arrow">→</span>
+<span class="flow-step">创建模型 Session</span>
+</div>
+
+<pre>oc := new(vision.OnnxConfig)
+oc.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+oc.UseCuda = true
+
+if err := oc.New(); err != nil { panic(err) }
+defer oc.Destroy()
+
+session, err := oc.OnnxEngine.NewSession("model.onnx", oc.SessionOptions)</pre>
+
+<div class="tip"><div class="tip-title">单例机制</div><p><code class="ic">OnnxConfig.New()</code> 使用 <code class="ic">sync.Mutex</code> + 状态检查实现全局 Engine 单例。与 <code class="ic">sync.Once</code> 不同，DLL 加载失败后可以重试。同一进程只允许加载一个 DLL 路径。</p></div>
+
+<h3>Session 选项默认配置</h3>
+<table>
+<thead><tr><th>选项</th><th>值</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>IntraOpNumThreads</td><td>用户指定 / CPU 核心数</td><td>算子内并行线程数</td></tr>
+<tr><td>InterOpNumThreads</td><td>1</td><td>算子间并行线程数</td></tr>
+<tr><td>ExecutionMode</td><td>Sequential</td><td>顺序执行模式</td></tr>
+<tr><td>MemPattern</td><td>Enabled</td><td>内存模式优化</td></tr>
+<tr><td>GraphOptimizationLevel</td><td>ORT_ENABLE_ALL</td><td>图优化级别：全部启用</td></tr>
+<tr><td>CpuMemArena</td><td>用户指定</td><td>CPU 内存池策略</td></tr>
+</tbody></table>
+
+<h2 id="yolo26" class="sa">YOLO26</h2>
+<p>YOLO26 是 Ultralytics 最新一代目标检测模型，本项目支持其全部五种任务。包路径：<code class="ic">github.com/DavidSche/raven-onnxruntime/vision/yolo26</code></p>
+
+<h3>Config 配置</h3>
+<pre>type Config struct {
+    ModelPath          string
+    OnnxRuntimeLibPath string
+    ConfThreshold      float32       // 置信度阈值（默认 0.45）
+    IOUThreshold       float32       // NMS IOU 阈值（默认 0.45）
+    MaskThreshold      float32       // Mask 二值化阈值（默认 0.5）
+    InputSize          int           // 输入尺寸（默认 640）
+    NumClasses         int           // 类别数（默认 80）
+    NumMaskCoeffs      int           // Mask 系数数（默认 32）
+    NumKeyPoints       int           // 关键点数（默认 17）
+    UseCuda            bool
+    NumThreads         int
+    EnableCpuMemArena  bool
+    ApiVersion         ort.ApiVersion
+}</pre>
+
+<h3 id="yolo26-det" class="sa">目标检测 (DetEngine)</h3>
+<p>检测输出格式：<code class="ic">[N, 300, 6]</code>，每行 <code class="ic">[x1, y1, x2, y2, score, class_id]</code>。</p>
+<pre>cfg := yolo26.DefaultDetConfig()
+cfg.ModelPath = "models/yolo26m.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+cfg.UseCuda = true
+
+engine, err := yolo26.NewDetEngine(cfg)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("test.jpg")
+
+// 单帧推理
+results, err := engine.Predict(img)
+
+// 批量推理
+batchResults, err := engine.PredictBatch([]image.Image{img1, img2, img3})
+
+for _, res := range results {
+    fmt.Printf("ClassID: %d, Score: %.2f, Box: %v\n",
+        res.ClassID, res.Score, res.Box)
+}
+
+type DetResult struct {
+    ClassID int
+    Score   float32
+    Box     image.Rectangle
+}</pre>
+
+<h3 id="yolo26-seg" class="sa">实例分割 (SegEngine)</h3>
+<p>分割模型有两个输出：<code class="ic">[1, 300, 38]</code>（检测+Mask系数）和 <code class="ic">[1, 32, 160, 160]</code>（Mask原型）。</p>
+<pre>cfg := yolo26.DefaultSegConfig()
+cfg.ModelPath = "models/yolo26s-seg.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := yolo26.NewSegEngine(cfg)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("test.jpg")
+results, err := engine.Predict(img)
+
+for idx, res := range results {
+    fmt.Printf("ClassID: %d, Score: %.2f, Box: %v\n",
+        res.ClassID, res.Score, res.Box)
+    imageutil.Save(fmt.Sprintf("mask_%d.png", idx), res.Mask, 100)
+}
+
+type SegResult struct {
+    ClassID int
+    Score   float32
+    Box     image.Rectangle
+    Mask    *image.Gray
+}</pre>
+
+<h3 id="yolo26-pose" class="sa">姿态估计 (PoseEngine)</h3>
+<p>姿态模型输出格式：<code class="ic">[N, 300, 57]</code>（6 基础属性 + 17×3 关键点），支持批量推理和通道优先格式自动检测。</p>
+<pre>cfg := yolo26.DefaultPoseConfig()
+cfg.ModelPath = "models/yolo26m-pose.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+cfg.NumKeyPoints = 17
+
+engine, err := yolo26.NewPoseEngine(cfg)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("person.jpg")
+results, err := engine.Predict(img)
+
+// 绘制骨架
+dst := yolo26.DrawPoseResult(img, results)
+imageutil.Save("pose_output.jpg", dst, 50)
+
+type PoseResult struct {
+    ClassID   int
+    Score     float32
+    Box       image.Rectangle
+    KeyPoints []KeyPoint
+}
+
+type KeyPoint struct {
+    X, Y  int
+    Score float32
+}</pre>
+
+<h3 id="yolo26-obb" class="sa">旋转目标检测 (OBBEngine)</h3>
+<p>旋转检测输出格式：<code class="ic">[1, 300, 7]</code>，每行 <code class="ic">[cx, cy, w, h, score, class_id, angle]</code>。</p>
+<pre>cfg := yolo26.DefaultOBBConfig()
+cfg.ModelPath = "models/yolo26m-obb.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+cfg.InputSize = 1024
+cfg.NumClasses = 15
+
+engine, err := yolo26.NewOBBEngine(cfg)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("ship.jpg")
+results, err := engine.Predict(img)
+
+for _, res := range results {
+    fmt.Printf("ClassID: %d, Score: %.2f, Corners: %v, Angle: %.2f\n",
+        res.ClassID, res.Score, res.Corners, res.Angle)
+}
+
+type OBBResult struct {
+    ClassID int
+    Score   float32
+    Corners [4]image.Point
+    Center  image.Point
+    Angle   float32
+}</pre>
+
+<h3 id="yolo26-cls" class="sa">图像分类 (ClsEngine)</h3>
+<p>分类模型输入尺寸为 224×224，输出 <code class="ic">[1, 1000]</code> 的 logits。</p>
+<pre>cfg := yolo26.DefaultClsConfig()
+cfg.ModelPath = "models/yolo26m-cls.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := yolo26.NewClsEngine(cfg)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("test.jpg")
+results, err := engine.Predict(img, 5) // top 5
+
+for _, res := range results {
+    fmt.Printf("ClassID: %d, Score: %.5f\n", res.ClassID, res.Score)
+}
+
+type ClassResult struct {
+    ClassID int
+    Score   float32
+}</pre>
+
+<h2 id="yolov11" class="sa">YOLOv11</h2>
+<p>YOLOv11 的 API 与 YOLO26 完全一致，仅包路径和默认配置不同。包路径：<code class="ic">github.com/DavidSche/raven-onnxruntime/vision/yolov11</code></p>
+<table>
+<thead><tr><th>任务</th><th>引擎</th><th>默认配置函数</th><th>结果类型</th></tr></thead>
+<tbody>
+<tr><td>目标检测</td><td>DetEngine</td><td>DefaultDetConfig()</td><td>DetResult</td></tr>
+<tr><td>实例分割</td><td>SegEngine</td><td>DefaultSegConfig()</td><td>SegResult</td></tr>
+<tr><td>姿态估计</td><td>PoseEngine</td><td>DefaultPoseConfig()</td><td>PoseResult</td></tr>
+<tr><td>旋转检测</td><td>OBBEngine</td><td>DefaultOBBConfig()</td><td>OBBResult</td></tr>
+<tr><td>图像分类</td><td>ClsEngine</td><td>DefaultClsConfig()</td><td>ClassResult</td></tr>
+</tbody></table>
+<pre>import "github.com/DavidSche/raven-onnxruntime/vision/yolov11"
+
+cfg := yolov11.DefaultDetConfig()
+cfg.ModelPath = "models/yolo11m.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := yolov11.NewDetEngine(cfg)
+defer engine.Destroy()
+
+results, err := engine.Predict(img)</pre>
+
+<div class="tip"><div class="tip-title">YOLOv11 与 YOLO26 的区别</div><p>YOLOv11 的 IOU 阈值默认为 0.5（YOLO26 为 0.45），其余 API 完全一致。YOLOv11 的后处理使用传统 NMS 流程（含 anchor 解码），YOLO26 的检测模型输出已是 NMS 后的结果。</p></div>
+
+<h2 id="sam2" class="sa">SAM2</h2>
+<p>SAM2（Segment Anything Model 2）是 Meta 的图像分割模型，采用编码器-解码器架构。包路径：<code class="ic">github.com/DavidSche/raven-onnxruntime/vision/sam2</code></p>
+
+<h3>工作流程</h3>
+<div class="flow">
+<span class="flow-step">1. 创建 Engine</span><span class="flow-arrow">→</span>
+<span class="flow-step">2. EncodeImage</span><span class="flow-arrow">→</span>
+<span class="flow-step">3. Decode (传入点/框)</span><span class="flow-arrow">→</span>
+<span class="flow-step">4. 获取 Mask</span>
+</div>
+
+<pre>config := sam2.Config{
+    OnnxRuntimeLibPath: "./lib/onnxruntime.dll",
+    EncodeModelPath:    "models/sam2/vision_encoder.onnx",
+    DecodeModelPath:    "models/sam2/prompt_encoder_mask_decoder.onnx",
+}
+
+engine, err := sam2.NewEngine(config)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("person.jpg")
+imgCtx, err := engine.EncodeImage(img)
+if err != nil { panic(err) }
+defer imgCtx.Destroy()
+
+points := []sam2.Point{
+    {X: 367, Y: 168, Label: sam2.LabelBoxTopLeft},
+    {X: 441, Y: 349, Label: sam2.LabelBoxBotRight},
+}
+maskImg, score, err := imgCtx.Decode(points)
+
+// 或获取原始数据
+result, err := imgCtx.DecodeRaw(points)
+// result.Mask: []uint8 (0 或 255)
+// result.Score: float32
+// result.Width, result.Height: int</pre>
+
+<h3>Point 标签类型</h3>
+<table>
+<thead><tr><th>标签</th><th>值</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code class="ic">LabelBackground</code></td><td>0</td><td>背景/排除点</td></tr>
+<tr><td><code class="ic">LabelForeground</code></td><td>1</td><td>前景/点击点</td></tr>
+<tr><td><code class="ic">LabelBoxTopLeft</code></td><td>2</td><td>边界框左上角</td></tr>
+<tr><td><code class="ic">LabelBoxBotRight</code></td><td>3</td><td>边界框右下角</td></tr>
+</tbody></table>
+
+<div class="tip"><div class="tip-title">性能优化</div><p><code class="ic">EncodeImage</code> 是耗时操作（编码器推理），而 <code class="ic">Decode</code> 很快。对于同一张图片的多次不同提示，只需编码一次，然后多次调用 Decode。</p></div>
+
+<h2 id="sam3" class="sa">SAM3 / SAM3.1</h2>
+<p>SAM3/SAM3.1 是 Meta 最新的分割模型，采用三模型架构（视觉编码器 + 文本编码器 + 解码器）。包路径：<code class="ic">github.com/DavidSche/raven-onnxruntime/vision/sam3</code></p>
+
+<pre>config := sam3.Config{
+    OnnxRuntimeLibPath: "./lib/onnxruntime.dll",
+    VisionModelPath:    "models/sam3_vision_encoder.onnx",
+    TextModelPath:      "models/sam3_text_encoder.onnx",
+    DecoderModelPath:   "models/sam3_decoder.onnx",
+}
+
+engine, err := sam3.NewEngine(config)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("person.jpg")
+imgCtx, err := engine.EncodeImage(img)
+if err != nil { panic(err) }
+defer imgCtx.Destroy()
+
+points := []sam3.Point{
+    {X: 367, Y: 168, Label: sam3.LabelPosBox},
+    {X: 441, Y: 349, Label: sam3.LabelPosBox},
+}
+maskImg, score, err := imgCtx.Decode(points)</pre>
+
+<h3>SAM3 与 SAM2 的区别</h3>
+<table>
+<thead><tr><th>特性</th><th>SAM2</th><th>SAM3/SAM3.1</th></tr></thead>
+<tbody>
+<tr><td>模型数量</td><td>2（编码器+解码器）</td><td>3（视觉+文本+解码器）</td></tr>
+<tr><td>输入尺寸</td><td>1024</td><td>1008</td></tr>
+<tr><td>点标签</td><td>4 种（含 BoxTopLeft/BotRight）</td><td>2 种（PosBox/NegBox）</td></tr>
+<tr><td>解码器输出</td><td>iou_scores + pred_masks</td><td>pred_masks + pred_logits + presence_logits</td></tr>
+<tr><td>文本编码</td><td>无</td><td>内置（当前使用 dummy 文本）</td></tr>
+</tbody></table>
+
+<h3>Point 标签类型</h3>
+<table>
+<thead><tr><th>标签</th><th>值</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code class="ic">LabelBackground</code></td><td>0</td><td>背景/排除</td></tr>
+<tr><td><code class="ic">LabelForeground</code></td><td>1</td><td>前景/包含</td></tr>
+<tr><td><code class="ic">LabelNegBox</code></td><td>0</td><td>负框（排除区域）</td></tr>
+<tr><td><code class="ic">LabelPosBox</code></td><td>1</td><td>正框（包含区域）</td></tr>
+</tbody></table>
+
+<h2 id="rfdetr" class="sa">RF-DETR</h2>
+<p>RF-DETR 是 Roboflow 的实时检测 Transformer 模型，支持目标检测和实例分割，并支持动态批量推理。包路径：<code class="ic">github.com/DavidSche/raven-onnxruntime/vision/rfdetr</code></p>
+
+<h3>Config 配置</h3>
+<pre>type Config struct {
+    ModelPath          string
+    OnnxRuntimeLibPath string
+    ConfThreshold      float32       // 默认 0.5
+    IOUThreshold       float32       // 默认 0.45
+    MaskThreshold      float32       // 默认 0.5
+    InputSize          int           // 默认 0（自动检测）
+    NumClasses         int           // 默认 80
+    MaxDetections      int           // 默认 300
+    DynamicBatch       bool          // 是否支持动态批量
+    UseCuda            bool
+    NumThreads         int
+    EnableCpuMemArena  bool
+    ApiVersion         ort.ApiVersion
+}</pre>
+
+<div class="tip"><div class="tip-title">自动检测</div><p>当 <code class="ic">InputSize</code> 为 0 时，RF-DETR 引擎会从模型路径自动检测输入尺寸和是否支持动态批量。</p></div>
+
+<h3>目标检测 (DetEngine)</h3>
+<pre>cfg := rfdetr.DefaultDetConfig()
+cfg.ModelPath = "models/rf-detr/rf-detr-base-coco.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := rfdetr.NewDetEngine(cfg)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("test.jpg")
+results, err := engine.Predict(img)
+
+// 批量推理（需要模型支持 DynamicBatch）
+batchResults, err := engine.PredictBatch([]image.Image{img1, img2})
+
+type DetResult struct {
+    ClassID int
+    Score   float32
+    Box     image.Rectangle
+}</pre>
+
+<h3>实例分割 (SegEngine)</h3>
+<pre>cfg := rfdetr.DefaultSegConfig()
+cfg.ModelPath = "models/rf-detr/rf-detr-seg-nano.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := rfdetr.NewSegEngine(cfg)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("test.jpg")
+results, err := engine.Predict(img)
+
+for idx, res := range results {
+    fmt.Printf("ClassID: %d, Score: %.2f\n", res.ClassID, res.Score)
+    imageutil.Save(fmt.Sprintf("rfdetr_mask_%d.png", idx), res.Mask, 100)
+}
+
+type SegResult struct {
+    ClassID int
+    Score   float32
+    Box     image.Rectangle
+    Mask    *image.Gray
+}</pre>
+
+<h2 id="batch" class="sa">批量推理</h2>
+<p>批量推理允许一次处理多张图片，充分利用 GPU 并行能力，显著提升吞吐量。</p>
+
+<h3>支持的模型</h3>
+<table>
+<thead><tr><th>模型</th><th>任务</th><th>批量方法</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>YOLO26</td><td>检测 / 姿态</td><td>PredictBatch</td><td>原生支持，单次 Run</td></tr>
+<tr><td>RF-DETR</td><td>检测 / 分割</td><td>PredictBatch</td><td>需要 DynamicBatch=true</td></tr>
+<tr><td>YOLO26</td><td>分割 / OBB / 分类</td><td>—</td><td>仅支持单帧 Predict</td></tr>
+<tr><td>YOLOv11</td><td>全部</td><td>—</td><td>仅支持单帧 Predict</td></tr>
+<tr><td>SAM2 / SAM3</td><td>分割</td><td>—</td><td>编码器-解码器架构，不适合批量</td></tr>
+</tbody></table>
+
+<h3>使用示例</h3>
+<pre>engine, _ := yolo26.NewDetEngine(cfg)
+defer engine.Destroy()
+
+imgs := []image.Image{img1, img2, img3, img4}
+batchResults, err := engine.PredictBatch(imgs)
+// batchResults[0] = img1 的检测结果
+// batchResults[1] = img2 的检测结果
+
+// RF-DETR 批量推理
+cfg.DynamicBatch = true
+rfdetrEngine, _ := rfdetr.NewDetEngine(cfg)
+batchResults, err := rfdetrEngine.PredictBatch(imgs)</pre>
+
+<div class="tip"><div class="tip-title">内部实现</div><p><code class="ic">PredictBatch</code> 内部创建 [N, 3, H, W] 的输入张量，一次 Session.Run() 完成推理，然后按 batch 维度拆分结果分别后处理。Predict() 内部委托给 PredictBatch([]image.Image{img})，单帧场景无额外开销。</p></div>
+
+<h2 id="pipeline" class="sa">模型流水线</h2>
+<p>可以将检测模型与分割模型组合，实现"先检测再分割"的流水线。典型场景：YOLO 检测目标 → SAM 精确分割。</p>
+
+<pre>yoloCfg := yolo26.DefaultDetConfig()
+yoloCfg.ModelPath = "models/yolo26m.onnx"
+yoloCfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+yoloEngine, err := yolo26.NewDetEngine(yoloCfg)
+if err != nil { panic(err) }
+defer yoloEngine.Destroy()
+
+img, _ := imageutil.Open("person.jpg")
+yoloResults, err := yoloEngine.Predict(img)
+
+var targetBox image.Rectangle
+for _, res := range yoloResults {
+    if res.ClassID == 0 { // COCO: person
+        targetBox = res.Box
+        break
+    }
+}
+
+samCfg := sam3.Config{
+    OnnxRuntimeLibPath: "./lib/onnxruntime.dll",
+    VisionModelPath:    "models/sam3_vision_encoder.onnx",
+    TextModelPath:      "models/sam3_text_encoder.onnx",
+    DecoderModelPath:   "models/sam3_decoder.onnx",
+}
+
+samEngine, err := sam3.NewEngine(samCfg)
+if err != nil { panic(err) }
+defer samEngine.Destroy()
+
+imgCtx, err := samEngine.EncodeImage(img)
+if err != nil { panic(err) }
+defer imgCtx.Destroy()
+
+points := []sam3.Point{
+    {X: float32(targetBox.Min.X), Y: float32(targetBox.Min.Y), Label: sam3.LabelPosBox},
+    {X: float32(targetBox.Max.X), Y: float32(targetBox.Max.Y), Label: sam3.LabelPosBox},
+}
+maskImg, score, err := imgCtx.Decode(points)</pre>
+
+<div class="tip"><div class="tip-title">流水线优势</div><p>YOLO + SAM 组合兼顾了检测的速度和分割的精度。YOLO 快速定位目标区域，SAM 在该区域内生成像素级精确的 Mask。这种模式特别适合需要高精度分割的自动化场景。</p></div>
+
+<h2 id="cuda" class="sa">CUDA 加速</h2>
+<p>启用 CUDA 可以显著提升推理速度，特别是对于大模型和批量推理场景。</p>
+
+<h3>前提条件</h3>
+<ul>
+<li>NVIDIA GPU（计算能力 6.0+）</li>
+<li>CUDA Toolkit 已安装</li>
+<li>ONNX Runtime GPU 版本的共享库</li>
+</ul>
+
+<h3>启用方式</h3>
+<pre>// 方式 1：通过 Config 启用（推荐）
+cfg := yolo26.DefaultDetConfig()
+cfg.UseCuda = true
+
+// 方式 2：通过 ort 层启用
+opts, _ := engine.NewSessionOptions()
+opts.EnableCUDA()</pre>
+
+<div class="warn"><div class="warn-title">错误处理</div><p>如果请求 CUDA 但 ONNX Runtime 未检测到 CUDAExecutionProvider，OnnxConfig.New() 会返回明确的错误信息，而不是静默降级到 CPU。这确保了在需要 GPU 的场景下不会意外使用 CPU 推理。</p></div>
+
+<pre>providers, _ := engine.AvailableProviders()
+// 输出示例: ["CPUExecutionProvider", "CUDAExecutionProvider"]</pre>
+
+<h2 id="session-opts" class="sa">Session 配置</h2>
+<h3>SessionOptions API</h3>
+<table>
+<thead><tr><th>方法</th><th>说明</th><th>默认值</th></tr></thead>
+<tbody>
+<tr><td><code class="ic">SetIntraOpNumThreads(n)</code></td><td>算子内并行线程数</td><td>CPU 核心数</td></tr>
+<tr><td><code class="ic">SetInterOpNumThreads(n)</code></td><td>算子间并行线程数</td><td>1</td></tr>
+<tr><td><code class="ic">SetExecutionMode(mode)</code></td><td>执行模式</td><td>Sequential</td></tr>
+<tr><td><code class="ic">SetMemPattern(enabled)</code></td><td>内存模式优化</td><td>true</td></tr>
+<tr><td><code class="ic">SetGraphOptimizationLevel(level)</code></td><td>图优化级别</td><td>ORT_ENABLE_ALL</td></tr>
+<tr><td><code class="ic">SetCpuMemArena(useArena)</code></td><td>CPU 内存池策略</td><td>false</td></tr>
+<tr><td><code class="ic">EnableCUDA()</code></td><td>启用 CUDA EP</td><td>—</td></tr>
+</tbody></table>
+
+<h3>CpuMemArena 说明</h3>
+<div class="card">
+<h4>EnableCpuMemArena = false（默认）</h4>
+<p>禁用内存池，推理速度略慢，但 Destroy 后内存立即归还操作系统。适合短生命周期场景。</p>
+<h4>EnableCpuMemArena = true</h4>
+<p>启用内存池，推理速度最快，但 Destroy 后内存被缓存以供复用。适合长期运行的服务。</p>
+</div>
+
+<h3>执行模式与图优化级别</h3>
+<pre>const (
+    ExecutionModeSequential = 0
+    ExecutionModeParallel   = 1
+)
+
+const (
+    GraphOptimizationLevelDisable  = 0
+    GraphOptimizationLevelBasic    = 1
+    GraphOptimizationLevelExtended = 2
+    GraphOptimizationLevelAll      = 99  // 默认
+)</pre>
+
+<h2 id="logging" class="sa">日志系统</h2>
+<p>raven-onnxruntime 使用 <code class="ic">ort/ortlog</code> 包提供结构化日志，默认使用标准库 <code class="ic">log</code> 输出。</p>
+
+<h3>自定义 Logger</h3>
+<p>可以实现 <code class="ic">ortlog.Logger</code> 接口注入自定义日志器（如 zap、slog、logrus）：</p>
+<pre>type Logger interface {
+    Debugw(msg string, keysAndValues ...interface{})
+    Infow(msg string, keysAndValues ...interface{})
+    Warnw(msg string, keysAndValues ...interface{})
+    Errorw(msg string, keysAndValues ...interface{})
+}</pre>
+
+<pre>import "github.com/DavidSche/raven-onnxruntime/ort/ortlog"
+
+ortlog.SetLogger(myZapLogger)</pre>
+
+<h3>分段计时日志</h3>
+<p>YOLO26 检测/姿态引擎和 RF-DETR 检测引擎每 60 帧输出一次分段计时统计：</p>
+<pre>[INFO] yolo26 det timings  modelPath=...  batchSize=4  preprocess=2.1ms  run=5.3ms  postprocess=0.8ms  total=8.2ms  count=60</pre>
+
+<h2 id="api-ver" class="sa">API 版本协商</h2>
+<p>raven-onnxruntime 默认使用 ONNX Runtime C API 版本 26，并支持自动降级以兼容不同版本的共享库。</p>
+
+<h3>版本协商策略</h3>
+<div class="arch">代码 WithApiVersion(23)    环境变量 ORT_API_VERSION=20    默认 DefaultApiVersion(26)
+         ↓                         ↓                           ↓
+         └─────────── resolveApiVersion() 优先级 ──────────────┘
+                     代码参数 &gt; 环境变量 &gt; 默认值
+                              ↓
+                     getApi(requestedVersion)
+                              ↓
+              ┌─── 成功 → 使用请求的版本
+              └─── 失败 → 自动降级：从 supportedApiVersions 中
+                         找到 &lt; requestedVersion 的最高可用版本
+                              ↓
+                   ┌── 找到 → 使用降级版本，输出 Warn 日志
+                   └── 未找到 → 返回错误</div>
+
+<h3>支持的 API 版本</h3>
+<pre>const (
+    ApiVersion17 ApiVersion = 17
+    ApiVersion18 ApiVersion = 18
+    ApiVersion19 ApiVersion = 19
+    ApiVersion20 ApiVersion = 20
+    ApiVersion21 ApiVersion = 21
+    ApiVersion22 ApiVersion = 22
+    ApiVersion23 ApiVersion = 23
+    ApiVersion24 ApiVersion = 24
+    ApiVersion25 ApiVersion = 25
+    ApiVersion26 ApiVersion = 26  // 默认
+)</pre>
+
+<h3>使用方式</h3>
+<pre>// 方式 1：代码指定
+engine, err := ort.NewEngine("./lib/onnxruntime.dll",
+    ort.WithApiVersion(ort.ApiVersion23))
+
+// 方式 2：环境变量
+// export ORT_API_VERSION=20
+
+// 方式 3：通过 vision 层 Config
+cfg := yolo26.DefaultDetConfig()
+cfg.ApiVersion = ort.ApiVersion23</pre>
+
+<h2 id="api-ref" class="sa">API 速查</h2>
+<h3>ort 包</h3>
+<table>
+<thead><tr><th>类型 / 方法</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code class="ic">ort.NewEngine(libPath, ...opts)</code></td><td>创建 Engine，加载 ONNX Runtime 共享库</td></tr>
+<tr><td><code class="ic">ort.WithApiVersion(v)</code></td><td>指定 API 版本的 EngineOption</td></tr>
+<tr><td><code class="ic">engine.NewSessionOptions()</code></td><td>创建 SessionOptions</td></tr>
+<tr><td><code class="ic">engine.NewSession(path, opts)</code></td><td>创建推理 Session</td></tr>
+<tr><td><code class="ic">engine.NewTensor(shape, data)</code></td><td>创建 Tensor</td></tr>
+<tr><td><code class="ic">engine.AvailableProviders()</code></td><td>获取可用的 Execution Provider</td></tr>
+<tr><td><code class="ic">engine.GetVersion()</code></td><td>获取 ONNX Runtime 版本字符串</td></tr>
+<tr><td><code class="ic">engine.Destroy()</code></td><td>释放 Engine 资源</td></tr>
+<tr><td><code class="ic">session.Run(inputs)</code></td><td>执行推理，返回 map[string]*Value</td></tr>
+<tr><td><code class="ic">session.InputNames</code></td><td>输入名称列表</td></tr>
+<tr><td><code class="ic">session.OutputNames</code></td><td>输出名称列表</td></tr>
+<tr><td><code class="ic">session.GetInputShape(idx)</code></td><td>获取输入 Shape</td></tr>
+<tr><td><code class="ic">session.NewTensor(shape, data)</code></td><td>创建 Tensor（委托给 Engine）</td></tr>
+<tr><td><code class="ic">session.Destroy()</code></td><td>释放 Session 资源</td></tr>
+<tr><td><code class="ic">ort.GetTensorData[T](value)</code></td><td>泛型读取 Tensor 数据</td></tr>
+<tr><td><code class="ic">value.GetShape()</code></td><td>获取 Tensor Shape</td></tr>
+<tr><td><code class="ic">value.GetElementCount()</code></td><td>获取元素总数</td></tr>
+<tr><td><code class="ic">value.Destroy()</code></td><td>释放 Value 资源</td></tr>
+</tbody></table>
+
+<h3>vision 包模型引擎一览</h3>
+<table>
+<thead><tr><th>模型</th><th>包</th><th>引擎</th><th>任务</th><th>批量</th></tr></thead>
+<tbody>
+<tr><td>YOLO26</td><td>vision/yolo26</td><td>DetEngine</td><td>目标检测</td><td>✅</td></tr>
+<tr><td>YOLO26</td><td>vision/yolo26</td><td>SegEngine</td><td>实例分割</td><td>❌</td></tr>
+<tr><td>YOLO26</td><td>vision/yolo26</td><td>PoseEngine</td><td>姿态估计</td><td>✅</td></tr>
+<tr><td>YOLO26</td><td>vision/yolo26</td><td>OBBEngine</td><td>旋转检测</td><td>❌</td></tr>
+<tr><td>YOLO26</td><td>vision/yolo26</td><td>ClsEngine</td><td>图像分类</td><td>❌</td></tr>
+<tr><td>YOLOv11</td><td>vision/yolov11</td><td>DetEngine</td><td>目标检测</td><td>❌</td></tr>
+<tr><td>YOLOv11</td><td>vision/yolov11</td><td>SegEngine</td><td>实例分割</td><td>❌</td></tr>
+<tr><td>YOLOv11</td><td>vision/yolov11</td><td>PoseEngine</td><td>姿态估计</td><td>❌</td></tr>
+<tr><td>YOLOv11</td><td>vision/yolov11</td><td>OBBEngine</td><td>旋转检测</td><td>❌</td></tr>
+<tr><td>YOLOv11</td><td>vision/yolov11</td><td>ClsEngine</td><td>图像分类</td><td>❌</td></tr>
+<tr><td>SAM2</td><td>vision/sam2</td><td>Engine</td><td>图像分割</td><td>❌</td></tr>
+<tr><td>SAM3</td><td>vision/sam3</td><td>Engine</td><td>图像分割</td><td>❌</td></tr>
+<tr><td>RF-DETR</td><td>vision/rfdetr</td><td>DetEngine</td><td>目标检测</td><td>✅</td></tr>
+<tr><td>RF-DETR</td><td>vision/rfdetr</td><td>SegEngine</td><td>实例分割</td><td>✅</td></tr>
+</tbody></table>
+
+<h3>错误码映射</h3>
+<table>
+<thead><tr><th>错误码</th><th>名称</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>OK</td><td>成功</td></tr>
+<tr><td>1</td><td>FAIL</td><td>通用失败</td></tr>
+<tr><td>2</td><td>INVALID_ARGUMENT</td><td>无效参数</td></tr>
+<tr><td>3</td><td>NO_SUCHFILE</td><td>文件不存在</td></tr>
+<tr><td>4</td><td>NO_MODEL</td><td>模型不存在</td></tr>
+<tr><td>5</td><td>ENGINE_ERROR</td><td>引擎错误</td></tr>
+<tr><td>6</td><td>RUNTIME_EXCEPTION</td><td>运行时异常</td></tr>
+<tr><td>7</td><td>INVALID_PROTOBUF</td><td>无效 Protobuf</td></tr>
+<tr><td>9</td><td>NOT_IMPLEMENTED</td><td>未实现</td></tr>
+<tr><td>10</td><td>INVALID_GRAPH</td><td>无效计算图</td></tr>
+<tr><td>11</td><td>EP_FAIL</td><td>Execution Provider 失败</td></tr>
+</tbody></table>
+
+<h2 id="faq" class="sa">常见问题</h2>
+
+<div class="card">
+<h4>Q: 是否需要安装 C 编译器？</h4>
+<p>不需要。本项目使用 purego 实现 Zero-CGO 调用，无需安装任何 C 编译器（如 GCC、MSVC）。只需确保 ONNX Runtime 共享库文件存在即可。</p>
+</div>
+
+<div class="card">
+<h4>Q: 如何获取 ONNX Runtime 共享库？</h4>
+<p>从 <a href="https://github.com/microsoft/onnxruntime/releases">ONNX Runtime Releases</a> 下载对应平台的预编译包：</p>
+<ul>
+<li>Windows: <code class="ic">onnxruntime-win-x64-1.x.x.zip</code>（CPU）或 <code class="ic">onnxruntime-win-x64-gpu-1.x.x.zip</code>（GPU）</li>
+<li>Linux: <code class="ic">onnxruntime-linux-x64-1.x.x.tgz</code></li>
+<li>macOS: <code class="ic">onnxruntime-osx-arm64-1.x.x.tgz</code></li>
+</ul>
+</div>
+
+<div class="card">
+<h4>Q: 为什么 CUDA 启用失败？</h4>
+<p>请确认：</p>
+<ol>
+<li>使用的是 GPU 版本的 ONNX Runtime 共享库</li>
+<li>CUDA Toolkit 和 cuDNN 已正确安装</li>
+<li>通过 <code class="ic">engine.AvailableProviders()</code> 确认 <code class="ic">CUDAExecutionProvider</code> 在列表中</li>
+</ol>
+</div>
+
+<div class="card">
+<h4>Q: 多个模型可以共享同一个 Engine 吗？</h4>
+<p>可以。vision 层的全局 Engine 单例确保所有模型共享同一个 ONNX Runtime 环境。每个模型会创建独立的 Session，但底层共享同一个 Engine 实例和 DLL。</p>
+</div>
+
+<div class="card">
+<h4>Q: 如何选择 YOLO26 和 YOLOv11？</h4>
+<p>YOLO26 是最新一代模型，精度更高，且检测输出已经是 NMS 后的结果（推理更快）。YOLOv11 是上一代模型，后处理包含传统 NMS 流程。建议优先使用 YOLO26。</p>
+</div>
+
+<div class="card">
+<h4>Q: Predict 和 PredictBatch 的区别？</h4>
+<p><code class="ic">Predict</code> 处理单张图片，<code class="ic">PredictBatch</code> 一次处理多张图片。对于支持批量的模型，<code class="ic">Predict</code> 内部委托给 <code class="ic">PredictBatch</code>，单帧场景无额外开销。批量推理在 GPU 上可以显著提升吞吐量。</p>
+</div>
+
+<div class="card">
+<h4>Q: 如何处理内存泄漏？</h4>
+<p>确保所有通过 <code class="ic">NewTensor</code> / <code class="ic">Session.Run</code> 创建的 <code class="ic">Value</code> 都调用了 <code class="ic">Destroy()</code>。建议使用 <code class="ic">defer value.Destroy()</code> 模式。Session 和 Engine 也需要在不再使用时调用 <code class="ic">Destroy()</code>。</p>
+</div>
+
+<div class="card">
+<h4>Q: 支持哪些平台？</h4>
+<p>支持 Windows、Linux、macOS。动态库加载通过 <code class="ic">internal/sys</code> 包适配不同平台：</p>
+<ul>
+<li>Windows: 使用 <code class="ic">LoadLibrary</code> 加载 <code class="ic">.dll</code></li>
+<li>Linux/macOS: 使用 <code class="ic">dlopen</code> 加载 <code class="ic">.so</code> / <code class="ic">.dylib</code></li>
+</ul>
+</div>
+
+<div class="card">
+<h4>Q: 如何自定义模型的后处理？</h4>
+<p>可以直接使用 <code class="ic">ort</code> 底层 API：</p>
+<ol>
+<li>通过 <code class="ic">Engine.NewSession()</code> 创建 Session</li>
+<li>通过 <code class="ic">Engine.NewTensor()</code> 创建输入 Tensor</li>
+<li>通过 <code class="ic">Session.Run()</code> 执行推理</li>
+<li>通过 <code class="ic">ort.GetTensorData[T]()</code> 读取输出数据</li>
+<li>自行实现后处理逻辑</li>
+</ol>
+</div>
+
+<footer style="margin-top:64px;padding-top:24px;border-top:1px solid var(--border);color:var(--text-light);font-size:13px;text-align:center">
+<p>raven-onnxruntime 使用手册 · Apache License 2.0 · 基于 ONNX Runtime + purego</p>
+</footer>
+
+</main>
+</body>
+</html>

@@ -1,0 +1,14 @@
+raven-onnxruntime
+
+This product includes software developed by DavidSche and contributors.
+
+Third-party components and assets used by this repository:
+
+- `github.com/ebitengine/purego` v0.10.1, licensed under the MIT License.
+- `github.com/up-zero/gotool` v0.0.0-20260117023945-15c46677ae16, licensed under the MIT License.
+- `golang.org/x/image` v0.34.0, licensed under the BSD-style Go license.
+- `golang.org/x/text` v0.32.0, licensed under the BSD-style Go license.
+- `vision/fonts/NotoSansSC-Regular.ttf`, licensed under the SIL Open Font License 1.1.
+
+ONNX Runtime is an external runtime dependency and is not bundled in this repository.
+When redistributing the runtime binary, include the upstream ONNX Runtime license and notices from Microsoft.

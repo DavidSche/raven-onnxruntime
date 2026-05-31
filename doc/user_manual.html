@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>raven-onnxruntime User Manual</title>
+<style>
+:root{--primary:#2563eb;--bg:#f8fafc;--sidebar-bg:#1e293b;--sidebar-text:#cbd5e1;--sidebar-active:#3b82f6;--text:#1e293b;--text-light:#64748b;--border:#e2e8f0;--code-bg:#1e293b;--code-text:#e2e8f0;--card-bg:#fff;--tag-bg:#eff6ff;--tag-text:#2563eb;--success:#16a34a;--warning:#d97706;--danger:#dc2626;--info:#0891b2}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans SC",sans-serif;background:var(--bg);color:var(--text);line-height:1.7}
+a{color:var(--primary);text-decoration:none}a:hover{text-decoration:underline}
+.sidebar{position:fixed;top:0;left:0;width:280px;height:100vh;background:var(--sidebar-bg);color:var(--sidebar-text);overflow-y:auto;z-index:100;padding:24px 0;scrollbar-width:thin;scrollbar-color:#475569 transparent}
+.sidebar::-webkit-scrollbar{width:6px}.sidebar::-webkit-scrollbar-thumb{background:#475569;border-radius:3px}
+.sidebar-header{padding:0 24px 20px;border-bottom:1px solid #334155;margin-bottom:12px}
+.sidebar-header h2{font-size:18px;color:#f1f5f9;font-weight:700}
+.sidebar-header p{font-size:12px;color:#94a3b8;margin-top:4px}
+.nav-section{padding:8px 0}
+.nav-section-title{padding:8px 24px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#64748b;font-weight:600}
+.nav-item{display:block;padding:6px 24px 6px 32px;font-size:13px;color:var(--sidebar-text);transition:all .15s;border-left:3px solid transparent}
+.nav-item:hover{background:#334155;color:#f1f5f9;text-decoration:none}
+.nav-item.sub{padding-left:44px;font-size:12px}
+.main{margin-left:280px;padding:40px 48px;max-width:960px}
+.main h1{font-size:32px;font-weight:800;margin-bottom:8px}
+.main h2{font-size:24px;font-weight:700;margin:48px 0 16px;padding-bottom:8px;border-bottom:2px solid var(--primary)}
+.main h3{font-size:18px;font-weight:600;margin:32px 0 12px}
+.main h4{font-size:15px;font-weight:600;margin:20px 0 8px}
+.main p{margin:8px 0}.main ul,.main ol{margin:8px 0 8px 24px}.main li{margin:4px 0}
+.hero{background:linear-gradient(135deg,#1e3a8a 0%,#3b82f6 100%);color:#fff;padding:48px;border-radius:16px;margin-bottom:40px}
+.hero h1{color:#fff;font-size:36px;border:none;margin-bottom:12px}
+.hero p{color:#bfdbfe;font-size:16px}
+.hero .badges{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap}
+.hero .badge{display:inline-block;padding:4px 12px;background:rgba(255,255,255,.15);border-radius:20px;font-size:13px;color:#e0f2fe}
+.card{background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:24px;margin:16px 0}
+.card h3,.card h4{margin-top:0}
+pre{background:var(--code-bg);color:var(--code-text);padding:20px;border-radius:10px;overflow-x:auto;margin:12px 0;font-size:13px;line-height:1.6;font-family:"JetBrains Mono","Fira Code","Cascadia Code",Consolas,monospace}
+code{font-family:"JetBrains Mono","Fira Code","Cascadia Code",Consolas,monospace;font-size:13px}
+.ic{background:#f1f5f9;color:var(--danger);padding:2px 6px;border-radius:4px;font-size:12px}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px}
+th{background:#f1f5f9;font-weight:600;text-align:left}th,td{padding:10px 14px;border:1px solid var(--border)}tr:nth-child(even) td{background:#f8fafc}
+.tag{display:inline-block;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:500}
+.tag-blue{background:var(--tag-bg);color:var(--tag-text)}.tag-green{background:#f0fdf4;color:var(--success)}.tag-orange{background:#fffbeb;color:var(--warning)}.tag-cyan{background:#ecfeff;color:var(--info)}
+.tip{background:#eff6ff;border-left:4px solid var(--primary);padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+.tip-title{font-weight:600;color:var(--primary);margin-bottom:4px}
+.warn{background:#fffbeb;border-left:4px solid var(--warning);padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+.warn-title{font-weight:600;color:var(--warning);margin-bottom:4px}
+.danger{background:#fef2f2;border-left:4px solid var(--danger);padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+.danger-title{font-weight:600;color:var(--danger);margin-bottom:4px}
+.arch{background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:24px;margin:16px 0;font-family:"JetBrains Mono","Fira Code",Consolas,monospace;font-size:13px;line-height:1.5;white-space:pre;overflow-x:auto}
+.flow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}
+.flow-step{background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:8px 16px;font-size:13px;font-weight:500}
+.flow-arrow{color:var(--text-light);font-size:18px}
+.sa{scroll-margin-top:20px}
+@media(max-width:900px){.sidebar{display:none}.main{margin-left:0;padding:24px}}
+</style>
+</head>
+<body>
+<nav class="sidebar">
+<div class="sidebar-header"><h2>raven-onnxruntime</h2><p>Zero-CGO ONNX Runtime Go Inference Framework</p></div>
+<div class="nav-section"><div class="nav-section-title">Getting Started</div>
+<a class="nav-item" href="#overview">Project Overview</a>
+<a class="nav-item" href="#features">Core Features</a>
+<a class="nav-item" href="#quickstart">Quick Start</a></div>
+<div class="nav-section"><div class="nav-section-title">Architecture</div>
+<a class="nav-item" href="#architecture">Overall Architecture</a>
+<a class="nav-item" href="#ort-package">ort Low-Level Bindings</a>
+<a class="nav-item" href="#vision-package">vision High-Level API</a></div>
+<div class="nav-section"><div class="nav-section-title">Model Engines</div>
+<a class="nav-item" href="#yolo26">YOLO26</a>
+<a class="nav-item sub" href="#yolo26-det">Object Detection</a>
+<a class="nav-item sub" href="#yolo26-seg">Instance Segmentation</a>
+<a class="nav-item sub" href="#yolo26-pose">Pose Estimation</a>
+<a class="nav-item sub" href="#yolo26-obb">OBB Detection</a>
+<a class="nav-item sub" href="#yolo26-cls">Image Classification</a>
+<a class="nav-item" href="#yolov11">YOLOv11</a>
+<a class="nav-item" href="#sam2">SAM2</a>
+<a class="nav-item" href="#sam3">SAM3 / SAM3.1</a>
+<a class="nav-item" href="#rfdetr">RF-DETR</a></div>
+<div class="nav-section"><div class="nav-section-title">Advanced Topics</div>
+<a class="nav-item" href="#batch">Batch Inference</a>
+<a class="nav-item" href="#pipeline">Model Pipeline</a>
+<a class="nav-item" href="#cuda">CUDA Acceleration</a>
+<a class="nav-item" href="#session-opts">Session Options</a>
+<a class="nav-item" href="#logging">Logging System</a>
+<a class="nav-item" href="#api-ver">API Version Negotiation</a></div>
+<div class="nav-section"><div class="nav-section-title">Reference</div>
+<a class="nav-item" href="#api-ref">API Quick Reference</a>
+<a class="nav-item" href="#faq">FAQ</a></div>
+</nav>
+
+<main class="main">
+<div class="hero">
+<h1>raven-onnxruntime User Manual</h1>
+<p>A Zero-CGO ONNX Runtime Go inference framework based on purego, providing ready-to-use wrappers for YOLO26 / YOLOv11 / SAM2 / SAM3 / RF-DETR models</p>
+<div class="badges"><span class="badge">Go 1.24+</span><span class="badge">Zero-CGO</span><span class="badge">CUDA Support</span><span class="badge">Batch Inference</span></div>
+</div>
+
+<h2 id="overview" class="sa">Project Overview</h2>
+<p><strong>raven-onnxruntime</strong> is a Go inference library built on <a href="https://github.com/microsoft/onnxruntime">ONNX Runtime</a>, using <a href="https://github.com/ebitengine/purego">purego</a> to achieve Zero-CGO calls to the ONNX Runtime shared library, and providing ready-to-use wrappers for the YOLO model family and SAM2/SAM3.</p>
+<p>This project is a merged version of <a href="https://github.com/GetcharZp/go-vision">go-vision</a> and <a href="https://github.com/GetcharZp/onnxruntime_purego">onnxruntime_purego</a>, with significant improvements in performance and stability.</p>
+
+<h3>Project Structure</h3>
+<pre>raven-onnxruntime/
+├── ort/                        # ONNX Runtime low-level bindings
+│   ├── api.go                  # ONNX C API structs and purego function bindings
+│   ├── onnxruntime.go          # Engine init, API registration, error code mapping
+│   ├── session.go              # Session / SessionOptions management
+│   ├── value.go                # Tensor creation and data access
+│   ├── utils.go                # General utility functions
+│   ├── utils_unix.go           # Unix platform adaptation
+│   ├── utils_windows.go        # Windows platform adaptation
+│   ├── internal/sys/           # Dynamic library loading (cross-platform)
+│   └── ortlog/                 # Structured logging package
+├── vision/                     # Computer vision model wrappers
+│   ├── onnx.go                 # OnnxConfig global Engine singleton and Session options
+│   ├── draw.go                 # Detection box/label rendering
+│   ├── yolo26/                 # YOLO26 models (det/seg/pose/obb/cls)
+│   ├── yolov11/                # YOLOv11 models (det/seg/pose/obb/cls)
+│   ├── sam2/                   # SAM2 image segmentation
+│   ├── sam3/                   # SAM3/SAM3.1 image segmentation
+│   └── rfdetr/                 # RF-DETR models (det/seg)
+├── include/                    # ONNX Runtime C API header files
+├── examples/                   # Usage examples
+├── go.mod
+└── go.sum</pre>
+
+<h2 id="features" class="sa">Core Features</h2>
+<table>
+<thead><tr><th>Feature</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><span class="tag tag-blue">Zero-CGO</span></td><td>Uses purego to call C shared libraries — no C compiler required, zero cross-compilation barriers</td></tr>
+<tr><td><span class="tag tag-green">Batch Inference</span></td><td>YOLO26 and RF-DETR support PredictBatch, fully utilizing GPU parallelism</td></tr>
+<tr><td><span class="tag tag-cyan">CUDA Acceleration</span></td><td>Optionally enable CUDA Execution Provider for significant GPU inference speedup</td></tr>
+<tr><td><span class="tag tag-orange">API Version Negotiation</span></td><td>Supports automatic API version downgrade for compatibility with different ONNX Runtime shared library versions</td></tr>
+<tr><td><span class="tag tag-blue">Dynamic I/O</span></td><td>Dynamically retrieves model input/output names, compatible with different export toolchains</td></tr>
+<tr><td><span class="tag tag-green">Segmented Timing</span></td><td>Outputs preprocessing/inference/postprocessing segmented timing statistics every 60 frames</td></tr>
+<tr><td><span class="tag tag-cyan">Retryable Singleton</span></td><td>Engine singleton supports retry on failure — won't permanently block due to DLL load failure</td></tr>
+<tr><td><span class="tag tag-orange">Readable Error Codes</span></td><td>ONNX error codes mapped to readable strings for quick troubleshooting</td></tr>
+</tbody></table>
+
+<h2 id="quickstart" class="sa">Quick Start</h2>
+<h3>Prerequisites</h3>
+<ul>
+<li>Go 1.24+</li>
+<li>ONNX Runtime shared library (<code class="ic">onnxruntime.dll</code> / <code class="ic">libonnxruntime.so</code> / <code class="ic">libonnxruntime.dylib</code>)</li>
+<li>(Optional) NVIDIA GPU + CUDA for GPU acceleration</li>
+</ul>
+<h3>Installation</h3>
+<pre>go get github.com/DavidSche/raven-onnxruntime</pre>
+
+<h3>Minimal Example: YOLO26 Object Detection</h3>
+<pre>package main
+
+import (
+    "fmt"
+    "github.com/DavidSche/raven-onnxruntime/vision/yolo26"
+    "github.com/up-zero/gotool/imageutil"
+)
+
+func main() {
+    cfg := yolo26.DefaultDetConfig()
+    cfg.ModelPath = "models/yolo26m.onnx"
+    cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+    cfg.UseCuda = true
+
+    engine, err := yolo26.NewDetEngine(cfg)
+    if err != nil { panic(err) }
+    defer engine.Destroy()
+
+    img, _ := imageutil.Open("test.jpg")
+    results, err := engine.Predict(img)
+    if err != nil { panic(err) }
+
+    for _, res := range results {
+        fmt.Printf("ClassID: %d, Score: %.2f, Box: %v\n",
+            res.ClassID, res.Score, res.Box)
+    }
+}</pre>
+
+<div class="tip"><div class="tip-title">Tip</div><p>All engines follow the same pattern: <strong>Create Config → Create Engine → Call Predict → Process Results → Destroy to release resources</strong>. Simply swap the engine type and config to switch between different models.</p></div>
+
+<h2 id="architecture" class="sa">Overall Architecture</h2>
+<p>raven-onnxruntime adopts a two-layer architecture design:</p>
+<div class="arch">┌─────────────────────────────────────────────────────────────┐
+│                     Application Layer (Your Code)             │
+├─────────────────────────────────────────────────────────────┤
+│                   vision High-Level API                       │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────┐ ┌───────┐ │
+│  │  YOLO26  │ │ YOLOv11  │ │   SAM2   │ │ SAM3 │ │RF-DETR│ │
+│  │det/seg/  │ │det/seg/  │ │ Segment  │ │Segment│ │det/seg│ │
+│  │pose/obb/ │ │pose/obb/ │ │          │ │      │ │       │ │
+│  │cls       │ │cls       │ │          │ │      │ │       │ │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └──┬───┘ └──┬────┘ │
+│       └─────────────┴────────────┴──────────┴─────────┘      │
+│                           │                                   │
+│                    OnnxConfig.New()                           │
+│                    (Global Engine Singleton)                  │
+├─────────────────────────────────────────────────────────────┤
+│                    ort Low-Level Bindings                     │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
+│  │  Engine  │ │ Session  │ │  Value   │ │  ortlog  │       │
+│  │(API reg) │ │(Inference)│ │(Tensors) │ │ (Logger) │       │
+│  └────┬─────┘ └──────────┘ └──────────┘ └──────────┘       │
+│       │  purego (Zero-CGO)                                   │
+│       ▼                                                      │
+├─────────────────────────────────────────────────────────────┤
+│            ONNX Runtime Shared Library (DLL/SO/DYLIB)        │
+└─────────────────────────────────────────────────────────────┘</div>
+
+<h3>Design Philosophy</h3>
+<ul>
+<li><strong>ort layer</strong>: Complete Go bindings for the ONNX Runtime C API, responsible for dynamic library loading, API registration, Session management, and Tensor creation and data access. Developers can use the ort layer directly for low-level operations.</li>
+<li><strong>vision layer</strong>: Provides high-level wrappers for computer vision models on top of the ort layer. Each model has its own sub-package containing the complete preprocessing, inference, and postprocessing pipeline — ready to use out of the box.</li>
+<li><strong>Global Engine Singleton</strong>: The vision layer initializes a global Engine singleton via <code class="ic">OnnxConfig.New()</code>, loading the DLL only once per process. All models share the same Engine instance.</li>
+</ul>
+
+<h2 id="ort-package" class="sa">ort Low-Level Bindings</h2>
+<p>The <code class="ic">ort</code> package provides Go bindings for the ONNX Runtime C API, using purego for zero CGO calls.</p>
+
+<h3>Engine — Inference Engine</h3>
+<p><code class="ic">Engine</code> is the core ONNX Runtime context, responsible for loading the dynamic library, registering APIs, and creating the environment.</p>
+<pre>import "github.com/DavidSche/raven-onnxruntime/ort"
+
+engine, err := ort.NewEngine("./lib/onnxruntime.dll",
+    ort.WithApiVersion(ort.ApiVersion26))
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+version := engine.GetVersion()
+providers, _ := engine.AvailableProviders()</pre>
+
+<h4>API Version Negotiation</h4>
+<p>When creating an Engine, the API version is determined by the following priority:</p>
+<ol>
+<li>The version specified via <code class="ic">WithApiVersion()</code> in code</li>
+<li>The value of the <code class="ic">ORT_API_VERSION</code> environment variable</li>
+<li>The default value <code class="ic">DefaultApiVersion</code> (currently 26)</li>
+</ol>
+<p>If the requested version is unavailable, it automatically downgrades to the highest compatible version supported by the library.</p>
+
+<h3>Session — Inference Session</h3>
+<p><code class="ic">Session</code> wraps an ONNX model inference session, supporting dynamic input/output name retrieval.</p>
+<pre>opts, err := engine.NewSessionOptions()
+if err != nil { panic(err) }
+defer opts.Destroy()
+
+opts.SetIntraOpNumThreads(4)
+opts.SetInterOpNumThreads(1)
+opts.SetExecutionMode(ort.ExecutionModeSequential)
+opts.SetMemPattern(true)
+opts.SetGraphOptimizationLevel(ort.GraphOptimizationLevelAll)
+opts.SetCpuMemArena(true)
+opts.EnableCUDA()
+
+session, err := engine.NewSession("model.onnx", opts)
+if err != nil { panic(err) }
+defer session.Destroy()
+
+fmt.Println("Inputs:", session.InputNames)
+fmt.Println("Outputs:", session.OutputNames)
+shape, _ := session.GetInputShape(0)</pre>
+
+<h4>Session.Run() — Execute Inference</h4>
+<pre>inputData := make([]float32, 1*3*640*640)
+inputTensor, err := engine.NewTensor([]int64{1, 3, 640, 640}, inputData)
+if err != nil { panic(err) }
+defer inputTensor.Destroy()
+
+inputName := session.InputNames[0]
+outputs, err := session.Run(map[string]*ort.Value{inputName: inputTensor})
+if err != nil { panic(err) }
+
+outputName := session.OutputNames[0]
+outputValue := outputs[outputName]
+data, _ := ort.GetTensorData[float32](outputValue)
+shape, _ := outputValue.GetShape()
+defer outputValue.Destroy()</pre>
+
+<div class="tip"><div class="tip-title">Performance Optimization</div><p><code class="ic">Session.Run()</code> internally implements zero-allocation optimization for output names (outputNameSlices / outputNamePtrs are allocated once during initMetadata), and input names are cached via sync.Map, so each Run no longer reallocates byte slices.</p></div>
+
+<h3>Value — Tensor Operations</h3>
+<h4>Creating Tensors</h4>
+<pre>tensor, err := engine.NewTensor([]int64{1, 3, 640, 640}, inputData)
+// Supported types: []float32, []float64, []int64, []int32, []int16, []int8,
+//                  []uint64, []uint32, []uint16, []uint8, []bool</pre>
+
+<h4>Reading Tensor Data</h4>
+<pre>data, err := ort.GetTensorData[float32](value)
+shape, err := value.GetShape()
+count, err := value.GetElementCount()</pre>
+
+<div class="warn"><div class="warn-title">Important</div><p>All <code class="ic">Value</code> instances must have <code class="ic">Destroy()</code> called after use to release underlying resources, otherwise memory leaks will occur. It is recommended to use the <code class="ic">defer value.Destroy()</code> pattern.</p></div>
+
+<h2 id="vision-package" class="sa">vision High-Level API</h2>
+<p>The <code class="ic">vision</code> package provides ready-to-use wrappers for computer vision models on top of the ort layer. The core component is <code class="ic">OnnxConfig</code>, which initializes the global Engine singleton and Session options.</p>
+
+<h3>OnnxConfig</h3>
+<pre>type OnnxConfig struct {
+    SessionOptions     *ort.SessionOptions
+    OnnxEngine         *ort.Engine
+    OnnxRuntimeLibPath string  // Required: ONNX Runtime shared library path
+    UseCuda            bool    // Optional: whether to enable CUDA
+    NumThreads         int     // Optional: ONNX thread count
+    ApiVersion         ort.ApiVersion // Optional: API version
+    EnableCpuMemArena  bool    // Optional: whether to enable ONNX memory pool
+}</pre>
+
+<h4>Initialization Flow</h4>
+<div class="flow">
+<span class="flow-step">Create OnnxConfig</span><span class="flow-arrow">→</span>
+<span class="flow-step">Set OnnxRuntimeLibPath</span><span class="flow-arrow">→</span>
+<span class="flow-step">Call New()</span><span class="flow-arrow">→</span>
+<span class="flow-step">Get OnnxEngine &amp; SessionOptions</span><span class="flow-arrow">→</span>
+<span class="flow-step">Create Model Session</span>
+</div>
+
+<pre>oc := new(vision.OnnxConfig)
+oc.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+oc.UseCuda = true
+
+if err := oc.New(); err != nil { panic(err) }
+defer oc.Destroy()
+
+session, err := oc.OnnxEngine.NewSession("model.onnx", oc.SessionOptions)</pre>
+
+<div class="tip"><div class="tip-title">Singleton Mechanism</div><p><code class="ic">OnnxConfig.New()</code> uses <code class="ic">sync.Mutex</code> + state checking to implement the global Engine singleton. Unlike <code class="ic">sync.Once</code>, DLL load failures can be retried. Only one DLL path is allowed per process.</p></div>
+
+<h3>Default Session Options</h3>
+<table>
+<thead><tr><th>Option</th><th>Value</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>IntraOpNumThreads</td><td>User-specified / CPU core count</td><td>Intra-op parallel thread count</td></tr>
+<tr><td>InterOpNumThreads</td><td>1</td><td>Inter-op parallel thread count</td></tr>
+<tr><td>ExecutionMode</td><td>Sequential</td><td>Sequential execution mode</td></tr>
+<tr><td>MemPattern</td><td>Enabled</td><td>Memory pattern optimization</td></tr>
+<tr><td>GraphOptimizationLevel</td><td>ORT_ENABLE_ALL</td><td>Graph optimization level: all enabled</td></tr>
+<tr><td>CpuMemArena</td><td>User-specified</td><td>CPU memory pool policy</td></tr>
+</tbody></table>
+
+<h2 id="yolo26" class="sa">YOLO26</h2>
+<p>YOLO26 is the latest generation of object detection models from Ultralytics. This project supports all five of its tasks. Package path: <code class="ic">github.com/DavidSche/raven-onnxruntime/vision/yolo26</code></p>
+
+<h3>Config</h3>
+<pre>type Config struct {
+    ModelPath          string
+    OnnxRuntimeLibPath string
+    ConfThreshold      float32       // Confidence threshold (default 0.45)
+    IOUThreshold       float32       // NMS IOU threshold (default 0.45)
+    MaskThreshold      float32       // Mask binarization threshold (default 0.5)
+    InputSize          int           // Input size (default 640)
+    NumClasses         int           // Number of classes (default 80)
+    NumMaskCoeffs      int           // Number of mask coefficients (default 32)
+    NumKeyPoints       int           // Number of keypoints (default 17)
+    UseCuda            bool
+    NumThreads         int
+    EnableCpuMemArena  bool
+    ApiVersion         ort.ApiVersion
+}</pre>
+
+<h3 id="yolo26-det" class="sa">Object Detection (DetEngine)</h3>
+<p>Detection output format: <code class="ic">[N, 300, 6]</code>, each row <code class="ic">[x1, y1, x2, y2, score, class_id]</code>.</p>
+<pre>cfg := yolo26.DefaultDetConfig()
+cfg.ModelPath = "models/yolo26m.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+cfg.UseCuda = true
+
+engine, err := yolo26.NewDetEngine(cfg)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("test.jpg")
+
+// Single image inference
+results, err := engine.Predict(img)
+
+// Batch inference
+batchResults, err := engine.PredictBatch([]image.Image{img1, img2, img3})
+
+for _, res := range results {
+    fmt.Printf("ClassID: %d, Score: %.2f, Box: %v\n",
+        res.ClassID, res.Score, res.Box)
+}
+
+type DetResult struct {
+    ClassID int
+    Score   float32
+    Box     image.Rectangle
+}</pre>
+
+<h3 id="yolo26-seg" class="sa">Instance Segmentation (SegEngine)</h3>
+<p>The segmentation model has two outputs: <code class="ic">[1, 300, 38]</code> (detection + mask coefficients) and <code class="ic">[1, 32, 160, 160]</code> (mask prototypes).</p>
+<pre>cfg := yolo26.DefaultSegConfig()
+cfg.ModelPath = "models/yolo26s-seg.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := yolo26.NewSegEngine(cfg)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("test.jpg")
+results, err := engine.Predict(img)
+
+for idx, res := range results {
+    fmt.Printf("ClassID: %d, Score: %.2f, Box: %v\n",
+        res.ClassID, res.Score, res.Box)
+    imageutil.Save(fmt.Sprintf("mask_%d.png", idx), res.Mask, 100)
+}
+
+type SegResult struct {
+    ClassID int
+    Score   float32
+    Box     image.Rectangle
+    Mask    *image.Gray
+}</pre>
+
+<h3 id="yolo26-pose" class="sa">Pose Estimation (PoseEngine)</h3>
+<p>Pose model output format: <code class="ic">[N, 300, 57]</code> (6 base attributes + 17×3 keypoints), supporting batch inference and channel-first format auto-detection.</p>
+<pre>cfg := yolo26.DefaultPoseConfig()
+cfg.ModelPath = "models/yolo26m-pose.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+cfg.NumKeyPoints = 17
+
+engine, err := yolo26.NewPoseEngine(cfg)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("person.jpg")
+results, err := engine.Predict(img)
+
+// Draw skeleton
+dst := yolo26.DrawPoseResult(img, results)
+imageutil.Save("pose_output.jpg", dst, 50)
+
+type PoseResult struct {
+    ClassID   int
+    Score     float32
+    Box       image.Rectangle
+    KeyPoints []KeyPoint
+}
+
+type KeyPoint struct {
+    X, Y  int
+    Score float32
+}</pre>
+
+<h3 id="yolo26-obb" class="sa">OBB Detection (OBBEngine)</h3>
+<p>OBB output format: <code class="ic">[1, 300, 7]</code>, each row <code class="ic">[cx, cy, w, h, score, class_id, angle]</code>.</p>
+<pre>cfg := yolo26.DefaultOBBConfig()
+cfg.ModelPath = "models/yolo26m-obb.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+cfg.InputSize = 1024
+cfg.NumClasses = 15
+
+engine, err := yolo26.NewOBBEngine(cfg)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("ship.jpg")
+results, err := engine.Predict(img)
+
+for _, res := range results {
+    fmt.Printf("ClassID: %d, Score: %.2f, Corners: %v, Angle: %.2f\n",
+        res.ClassID, res.Score, res.Corners, res.Angle)
+}
+
+type OBBResult struct {
+    ClassID int
+    Score   float32
+    Corners [4]image.Point
+    Center  image.Point
+    Angle   float32
+}</pre>
+
+<h3 id="yolo26-cls" class="sa">Image Classification (ClsEngine)</h3>
+<p>The classification model input size is 224×224, outputting <code class="ic">[1, 1000]</code> logits.</p>
+<pre>cfg := yolo26.DefaultClsConfig()
+cfg.ModelPath = "models/yolo26m-cls.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := yolo26.NewClsEngine(cfg)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("test.jpg")
+results, err := engine.Predict(img, 5) // top 5
+
+for _, res := range results {
+    fmt.Printf("ClassID: %d, Score: %.5f\n", res.ClassID, res.Score)
+}
+
+type ClassResult struct {
+    ClassID int
+    Score   float32
+}</pre>
+
+<h2 id="yolov11" class="sa">YOLOv11</h2>
+<p>YOLOv11 has an identical API to YOLO26, differing only in the package path and default configuration. Package path: <code class="ic">github.com/DavidSche/raven-onnxruntime/vision/yolov11</code></p>
+<table>
+<thead><tr><th>Task</th><th>Engine</th><th>Default Config Function</th><th>Result Type</th></tr></thead>
+<tbody>
+<tr><td>Object Detection</td><td>DetEngine</td><td>DefaultDetConfig()</td><td>DetResult</td></tr>
+<tr><td>Instance Segmentation</td><td>SegEngine</td><td>DefaultSegConfig()</td><td>SegResult</td></tr>
+<tr><td>Pose Estimation</td><td>PoseEngine</td><td>DefaultPoseConfig()</td><td>PoseResult</td></tr>
+<tr><td>OBB Detection</td><td>OBBEngine</td><td>DefaultOBBConfig()</td><td>OBBResult</td></tr>
+<tr><td>Image Classification</td><td>ClsEngine</td><td>DefaultClsConfig()</td><td>ClassResult</td></tr>
+</tbody></table>
+<pre>import "github.com/DavidSche/raven-onnxruntime/vision/yolov11"
+
+cfg := yolov11.DefaultDetConfig()
+cfg.ModelPath = "models/yolo11m.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := yolov11.NewDetEngine(cfg)
+defer engine.Destroy()
+
+results, err := engine.Predict(img)</pre>
+
+<div class="tip"><div class="tip-title">YOLOv11 vs YOLO26</div><p>YOLOv11 has a default IOU threshold of 0.5 (YOLO26 uses 0.45), while the rest of the API is identical. YOLOv11 post-processing uses the traditional NMS pipeline (including anchor decoding), whereas YOLO26 detection model outputs are already NMS-postprocessed results.</p></div>
+
+<h2 id="sam2" class="sa">SAM2</h2>
+<p>SAM2 (Segment Anything Model 2) is Meta's image segmentation model using an encoder-decoder architecture. Package path: <code class="ic">github.com/DavidSche/raven-onnxruntime/vision/sam2</code></p>
+
+<h3>Workflow</h3>
+<div class="flow">
+<span class="flow-step">1. Create Engine</span><span class="flow-arrow">→</span>
+<span class="flow-step">2. EncodeImage</span><span class="flow-arrow">→</span>
+<span class="flow-step">3. Decode (pass points/boxes)</span><span class="flow-arrow">→</span>
+<span class="flow-step">4. Get Mask</span>
+</div>
+
+<pre>config := sam2.Config{
+    OnnxRuntimeLibPath: "./lib/onnxruntime.dll",
+    EncodeModelPath:    "models/sam2/vision_encoder.onnx",
+    DecodeModelPath:    "models/sam2/prompt_encoder_mask_decoder.onnx",
+}
+
+engine, err := sam2.NewEngine(config)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("person.jpg")
+imgCtx, err := engine.EncodeImage(img)
+if err != nil { panic(err) }
+defer imgCtx.Destroy()
+
+points := []sam2.Point{
+    {X: 367, Y: 168, Label: sam2.LabelBoxTopLeft},
+    {X: 441, Y: 349, Label: sam2.LabelBoxBotRight},
+}
+maskImg, score, err := imgCtx.Decode(points)
+
+// Or get raw data
+result, err := imgCtx.DecodeRaw(points)
+// result.Mask: []uint8 (0 or 255)
+// result.Score: float32
+// result.Width, result.Height: int</pre>
+
+<h3>Point Label Types</h3>
+<table>
+<thead><tr><th>Label</th><th>Value</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code class="ic">LabelBackground</code></td><td>0</td><td>Background / exclusion point</td></tr>
+<tr><td><code class="ic">LabelForeground</code></td><td>1</td><td>Foreground / click point</td></tr>
+<tr><td><code class="ic">LabelBoxTopLeft</code></td><td>2</td><td>Bounding box top-left corner</td></tr>
+<tr><td><code class="ic">LabelBoxBotRight</code></td><td>3</td><td>Bounding box bottom-right corner</td></tr>
+</tbody></table>
+
+<div class="tip"><div class="tip-title">Performance Optimization</div><p><code class="ic">EncodeImage</code> is the time-consuming operation (encoder inference), while <code class="ic">Decode</code> is fast. For multiple different prompts on the same image, encode once and then call Decode multiple times.</p></div>
+
+<h2 id="sam3" class="sa">SAM3 / SAM3.1</h2>
+<p>SAM3/SAM3.1 are Meta's latest segmentation models, using a three-model architecture (vision encoder + text encoder + decoder). Package path: <code class="ic">github.com/DavidSche/raven-onnxruntime/vision/sam3</code></p>
+
+<pre>config := sam3.Config{
+    OnnxRuntimeLibPath: "./lib/onnxruntime.dll",
+    VisionModelPath:    "models/sam3_vision_encoder.onnx",
+    TextModelPath:      "models/sam3_text_encoder.onnx",
+    DecoderModelPath:   "models/sam3_decoder.onnx",
+}
+
+engine, err := sam3.NewEngine(config)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("person.jpg")
+imgCtx, err := engine.EncodeImage(img)
+if err != nil { panic(err) }
+defer imgCtx.Destroy()
+
+points := []sam3.Point{
+    {X: 367, Y: 168, Label: sam3.LabelPosBox},
+    {X: 441, Y: 349, Label: sam3.LabelPosBox},
+}
+maskImg, score, err := imgCtx.Decode(points)</pre>
+
+<h3>SAM3 vs SAM2</h3>
+<table>
+<thead><tr><th>Feature</th><th>SAM2</th><th>SAM3/SAM3.1</th></tr></thead>
+<tbody>
+<tr><td>Number of Models</td><td>2 (encoder + decoder)</td><td>3 (vision + text + decoder)</td></tr>
+<tr><td>Input Size</td><td>1024</td><td>1008</td></tr>
+<tr><td>Point Labels</td><td>4 types (incl. BoxTopLeft/BotRight)</td><td>2 types (PosBox/NegBox)</td></tr>
+<tr><td>Decoder Output</td><td>iou_scores + pred_masks</td><td>pred_masks + pred_logits + presence_logits</td></tr>
+<tr><td>Text Encoding</td><td>None</td><td>Built-in (currently uses dummy text)</td></tr>
+</tbody></table>
+
+<h3>Point Label Types</h3>
+<table>
+<thead><tr><th>Label</th><th>Value</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code class="ic">LabelBackground</code></td><td>0</td><td>Background / exclusion</td></tr>
+<tr><td><code class="ic">LabelForeground</code></td><td>1</td><td>Foreground / inclusion</td></tr>
+<tr><td><code class="ic">LabelNegBox</code></td><td>0</td><td>Negative box (exclusion region)</td></tr>
+<tr><td><code class="ic">LabelPosBox</code></td><td>1</td><td>Positive box (inclusion region)</td></tr>
+</tbody></table>
+
+<h2 id="rfdetr" class="sa">RF-DETR</h2>
+<p>RF-DETR is Roboflow's real-time detection Transformer model, supporting object detection and instance segmentation with dynamic batch inference. Package path: <code class="ic">github.com/DavidSche/raven-onnxruntime/vision/rfdetr</code></p>
+
+<h3>Config</h3>
+<pre>type Config struct {
+    ModelPath          string
+    OnnxRuntimeLibPath string
+    ConfThreshold      float32       // Default 0.5
+    IOUThreshold       float32       // Default 0.45
+    MaskThreshold      float32       // Default 0.5
+    InputSize          int           // Default 0 (auto-detect)
+    NumClasses         int           // Default 80
+    MaxDetections      int           // Default 300
+    DynamicBatch       bool          // Whether to support dynamic batching
+    UseCuda            bool
+    NumThreads         int
+    EnableCpuMemArena  bool
+    ApiVersion         ort.ApiVersion
+}</pre>
+
+<div class="tip"><div class="tip-title">Auto-Detection</div><p>When <code class="ic">InputSize</code> is 0, the RF-DETR engine automatically detects the input size and whether dynamic batching is supported from the model path.</p></div>
+
+<h3>Object Detection (DetEngine)</h3>
+<pre>cfg := rfdetr.DefaultDetConfig()
+cfg.ModelPath = "models/rf-detr/rf-detr-base-coco.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := rfdetr.NewDetEngine(cfg)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("test.jpg")
+results, err := engine.Predict(img)
+
+// Batch inference (requires model with DynamicBatch support)
+batchResults, err := engine.PredictBatch([]image.Image{img1, img2})
+
+type DetResult struct {
+    ClassID int
+    Score   float32
+    Box     image.Rectangle
+}</pre>
+
+<h3>Instance Segmentation (SegEngine)</h3>
+<pre>cfg := rfdetr.DefaultSegConfig()
+cfg.ModelPath = "models/rf-detr/rf-detr-seg-nano.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := rfdetr.NewSegEngine(cfg)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("test.jpg")
+results, err := engine.Predict(img)
+
+for idx, res := range results {
+    fmt.Printf("ClassID: %d, Score: %.2f\n", res.ClassID, res.Score)
+    imageutil.Save(fmt.Sprintf("rfdetr_mask_%d.png", idx), res.Mask, 100)
+}
+
+type SegResult struct {
+    ClassID int
+    Score   float32
+    Box     image.Rectangle
+    Mask    *image.Gray
+}</pre>
+
+<h2 id="batch" class="sa">Batch Inference</h2>
+<p>Batch inference allows processing multiple images at once, fully utilizing GPU parallelism and significantly improving throughput.</p>
+
+<h3>Supported Models</h3>
+<table>
+<thead><tr><th>Model</th><th>Task</th><th>Batch Method</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>YOLO26</td><td>Detection / Pose</td><td>PredictBatch</td><td>Native support, single Run</td></tr>
+<tr><td>RF-DETR</td><td>Detection / Segmentation</td><td>PredictBatch</td><td>Requires DynamicBatch=true</td></tr>
+<tr><td>YOLO26</td><td>Segmentation / OBB / Classification</td><td>—</td><td>Single-frame Predict only</td></tr>
+<tr><td>YOLOv11</td><td>All</td><td>—</td><td>Single-frame Predict only</td></tr>
+<tr><td>SAM2 / SAM3</td><td>Segmentation</td><td>—</td><td>Encoder-decoder architecture, not suitable for batching</td></tr>
+</tbody></table>
+
+<h3>Usage Example</h3>
+<pre>engine, _ := yolo26.NewDetEngine(cfg)
+defer engine.Destroy()
+
+imgs := []image.Image{img1, img2, img3, img4}
+batchResults, err := engine.PredictBatch(imgs)
+// batchResults[0] = detection results for img1
+// batchResults[1] = detection results for img2
+
+// RF-DETR batch inference
+cfg.DynamicBatch = true
+rfdetrEngine, _ := rfdetr.NewDetEngine(cfg)
+batchResults, err := rfdetrEngine.PredictBatch(imgs)</pre>
+
+<div class="tip"><div class="tip-title">Internal Implementation</div><p><code class="ic">PredictBatch</code> internally creates an [N, 3, H, W] input tensor, completes inference in a single Session.Run(), then splits results by batch dimension for separate post-processing. Predict() delegates to PredictBatch([]image.Image{img}) internally, so there is no overhead for single-frame scenarios.</p></div>
+
+<h2 id="pipeline" class="sa">Model Pipeline</h2>
+<p>You can combine detection and segmentation models to implement a "detect then segment" pipeline. Typical scenario: YOLO detects objects → SAM performs precise segmentation.</p>
+
+<pre>yoloCfg := yolo26.DefaultDetConfig()
+yoloCfg.ModelPath = "models/yolo26m.onnx"
+yoloCfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+yoloEngine, err := yolo26.NewDetEngine(yoloCfg)
+if err != nil { panic(err) }
+defer yoloEngine.Destroy()
+
+img, _ := imageutil.Open("person.jpg")
+yoloResults, err := yoloEngine.Predict(img)
+
+var targetBox image.Rectangle
+for _, res := range yoloResults {
+    if res.ClassID == 0 { // COCO: person
+        targetBox = res.Box
+        break
+    }
+}
+
+samCfg := sam3.Config{
+    OnnxRuntimeLibPath: "./lib/onnxruntime.dll",
+    VisionModelPath:    "models/sam3_vision_encoder.onnx",
+    TextModelPath:      "models/sam3_text_encoder.onnx",
+    DecoderModelPath:   "models/sam3_decoder.onnx",
+}
+
+samEngine, err := sam3.NewEngine(samCfg)
+if err != nil { panic(err) }
+defer samEngine.Destroy()
+
+imgCtx, err := samEngine.EncodeImage(img)
+if err != nil { panic(err) }
+defer imgCtx.Destroy()
+
+points := []sam3.Point{
+    {X: float32(targetBox.Min.X), Y: float32(targetBox.Min.Y), Label: sam3.LabelPosBox},
+    {X: float32(targetBox.Max.X), Y: float32(targetBox.Max.Y), Label: sam3.LabelPosBox},
+}
+maskImg, score, err := imgCtx.Decode(points)</pre>
+
+<div class="tip"><div class="tip-title">Pipeline Advantages</div><p>The YOLO + SAM combination balances detection speed and segmentation accuracy. YOLO quickly locates target regions, while SAM generates pixel-level precise masks within those regions. This pattern is particularly suitable for automated scenarios requiring high-precision segmentation.</p></div>
+
+<h2 id="cuda" class="sa">CUDA Acceleration</h2>
+<p>Enabling CUDA can significantly improve inference speed, especially for large models and batch inference scenarios.</p>
+
+<h3>Prerequisites</h3>
+<ul>
+<li>NVIDIA GPU (compute capability 6.0+)</li>
+<li>CUDA Toolkit installed</li>
+<li>ONNX Runtime GPU version shared library</li>
+</ul>
+
+<h3>How to Enable</h3>
+<pre>// Method 1: Enable via Config (recommended)
+cfg := yolo26.DefaultDetConfig()
+cfg.UseCuda = true
+
+// Method 2: Enable via ort layer
+opts, _ := engine.NewSessionOptions()
+opts.EnableCUDA()</pre>
+
+<div class="warn"><div class="warn-title">Error Handling</div><p>If CUDA is requested but ONNX Runtime does not detect CUDAExecutionProvider, OnnxConfig.New() will return a clear error message instead of silently falling back to CPU. This ensures that GPU inference is not accidentally replaced by CPU inference in scenarios where GPU is required.</p></div>
+
+<pre>providers, _ := engine.AvailableProviders()
+// Example output: ["CPUExecutionProvider", "CUDAExecutionProvider"]</pre>
+
+<h2 id="session-opts" class="sa">Session Options</h2>
+<h3>SessionOptions API</h3>
+<table>
+<thead><tr><th>Method</th><th>Description</th><th>Default</th></tr></thead>
+<tbody>
+<tr><td><code class="ic">SetIntraOpNumThreads(n)</code></td><td>Intra-op parallel thread count</td><td>CPU core count</td></tr>
+<tr><td><code class="ic">SetInterOpNumThreads(n)</code></td><td>Inter-op parallel thread count</td><td>1</td></tr>
+<tr><td><code class="ic">SetExecutionMode(mode)</code></td><td>Execution mode</td><td>Sequential</td></tr>
+<tr><td><code class="ic">SetMemPattern(enabled)</code></td><td>Memory pattern optimization</td><td>true</td></tr>
+<tr><td><code class="ic">SetGraphOptimizationLevel(level)</code></td><td>Graph optimization level</td><td>ORT_ENABLE_ALL</td></tr>
+<tr><td><code class="ic">SetCpuMemArena(useArena)</code></td><td>CPU memory pool policy</td><td>false</td></tr>
+<tr><td><code class="ic">EnableCUDA()</code></td><td>Enable CUDA EP</td><td>—</td></tr>
+</tbody></table>
+
+<h3>CpuMemArena Explanation</h3>
+<div class="card">
+<h4>EnableCpuMemArena = false (default)</h4>
+<p>Disables the memory pool — inference is slightly slower, but memory is immediately returned to the OS after Destroy. Suitable for short-lifecycle scenarios.</p>
+<h4>EnableCpuMemArena = true</h4>
+<p>Enables the memory pool — inference is fastest, but memory is cached for reuse after Destroy. Suitable for long-running services.</p>
+</div>
+
+<h3>Execution Modes and Graph Optimization Levels</h3>
+<pre>const (
+    ExecutionModeSequential = 0
+    ExecutionModeParallel   = 1
+)
+
+const (
+    GraphOptimizationLevelDisable  = 0
+    GraphOptimizationLevelBasic    = 1
+    GraphOptimizationLevelExtended = 2
+    GraphOptimizationLevelAll      = 99  // default
+)</pre>
+
+<h2 id="logging" class="sa">Logging System</h2>
+<p>raven-onnxruntime uses the <code class="ic">ort/ortlog</code> package for structured logging, defaulting to the standard library <code class="ic">log</code> for output.</p>
+
+<h3>Custom Logger</h3>
+<p>You can implement the <code class="ic">ortlog.Logger</code> interface to inject a custom logger (e.g., zap, slog, logrus):</p>
+<pre>type Logger interface {
+    Debugw(msg string, keysAndValues ...interface{})
+    Infow(msg string, keysAndValues ...interface{})
+    Warnw(msg string, keysAndValues ...interface{})
+    Errorw(msg string, keysAndValues ...interface{})
+}</pre>
+
+<pre>import "github.com/DavidSche/raven-onnxruntime/ort/ortlog"
+
+ortlog.SetLogger(myZapLogger)</pre>
+
+<h3>Segmented Timing Logs</h3>
+<p>YOLO26 detection/pose engines and RF-DETR detection engine output segmented timing statistics every 60 frames:</p>
+<pre>[INFO] yolo26 det timings  modelPath=...  batchSize=4  preprocess=2.1ms  run=5.3ms  postprocess=0.8ms  total=8.2ms  count=60</pre>
+
+<h2 id="api-ver" class="sa">API Version Negotiation</h2>
+<p>raven-onnxruntime defaults to ONNX Runtime C API version 26 and supports automatic downgrade for compatibility with different versions of the shared library.</p>
+
+<h3>Version Negotiation Strategy</h3>
+<div class="arch">Code WithApiVersion(23)    Env ORT_API_VERSION=20    Default DefaultApiVersion(26)
+         ↓                         ↓                           ↓
+         └─────────── resolveApiVersion() priority ─────────────┘
+                     Code parameter > Environment variable > Default value
+                              ↓
+                     getApi(requestedVersion)
+                              ↓
+              ┌─── Success → Use requested version
+              └─── Failure → Auto-downgrade: find the highest available
+                         version < requestedVersion from supportedApiVersions
+                              ↓
+                   ┌── Found → Use downgraded version, output Warn log
+                   └── Not found → Return error</div>
+
+<h3>Supported API Versions</h3>
+<pre>const (
+    ApiVersion17 ApiVersion = 17
+    ApiVersion18 ApiVersion = 18
+    ApiVersion19 ApiVersion = 19
+    ApiVersion20 ApiVersion = 20
+    ApiVersion21 ApiVersion = 21
+    ApiVersion22 ApiVersion = 22
+    ApiVersion23 ApiVersion = 23
+    ApiVersion24 ApiVersion = 24
+    ApiVersion25 ApiVersion = 25
+    ApiVersion26 ApiVersion = 26  // default
+)</pre>
+
+<h3>Usage</h3>
+<pre>// Method 1: Specify in code
+engine, err := ort.NewEngine("./lib/onnxruntime.dll",
+    ort.WithApiVersion(ort.ApiVersion23))
+
+// Method 2: Environment variable
+// export ORT_API_VERSION=20
+
+// Method 3: Via vision layer Config
+cfg := yolo26.DefaultDetConfig()
+cfg.ApiVersion = ort.ApiVersion23</pre>
+
+<h2 id="api-ref" class="sa">API Quick Reference</h2>
+<h3>ort Package</h3>
+<table>
+<thead><tr><th>Type / Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code class="ic">ort.NewEngine(libPath, ...opts)</code></td><td>Create Engine, load ONNX Runtime shared library</td></tr>
+<tr><td><code class="ic">ort.WithApiVersion(v)</code></td><td>EngineOption to specify API version</td></tr>
+<tr><td><code class="ic">engine.NewSessionOptions()</code></td><td>Create SessionOptions</td></tr>
+<tr><td><code class="ic">engine.NewSession(path, opts)</code></td><td>Create inference Session</td></tr>
+<tr><td><code class="ic">engine.NewTensor(shape, data)</code></td><td>Create Tensor</td></tr>
+<tr><td><code class="ic">engine.AvailableProviders()</code></td><td>Get available Execution Providers</td></tr>
+<tr><td><code class="ic">engine.GetVersion()</code></td><td>Get ONNX Runtime version string</td></tr>
+<tr><td><code class="ic">engine.Destroy()</code></td><td>Release Engine resources</td></tr>
+<tr><td><code class="ic">session.Run(inputs)</code></td><td>Execute inference, returns map[string]*Value</td></tr>
+<tr><td><code class="ic">session.InputNames</code></td><td>Input name list</td></tr>
+<tr><td><code class="ic">session.OutputNames</code></td><td>Output name list</td></tr>
+<tr><td><code class="ic">session.GetInputShape(idx)</code></td><td>Get input Shape</td></tr>
+<tr><td><code class="ic">session.NewTensor(shape, data)</code></td><td>Create Tensor (delegates to Engine)</td></tr>
+<tr><td><code class="ic">session.Destroy()</code></td><td>Release Session resources</td></tr>
+<tr><td><code class="ic">ort.GetTensorData[T](value)</code></td><td>Generic Tensor data reader</td></tr>
+<tr><td><code class="ic">value.GetShape()</code></td><td>Get Tensor Shape</td></tr>
+<tr><td><code class="ic">value.GetElementCount()</code></td><td>Get total element count</td></tr>
+<tr><td><code class="ic">value.Destroy()</code></td><td>Release Value resources</td></tr>
+</tbody></table>
+
+<h3>vision Package Model Engine Overview</h3>
+<table>
+<thead><tr><th>Model</th><th>Package</th><th>Engine</th><th>Task</th><th>Batch</th></tr></thead>
+<tbody>
+<tr><td>YOLO26</td><td>vision/yolo26</td><td>DetEngine</td><td>Object Detection</td><td>✅</td></tr>
+<tr><td>YOLO26</td><td>vision/yolo26</td><td>SegEngine</td><td>Instance Segmentation</td><td>❌</td></tr>
+<tr><td>YOLO26</td><td>vision/yolo26</td><td>PoseEngine</td><td>Pose Estimation</td><td>✅</td></tr>
+<tr><td>YOLO26</td><td>vision/yolo26</td><td>OBBEngine</td><td>OBB Detection</td><td>❌</td></tr>
+<tr><td>YOLO26</td><td>vision/yolo26</td><td>ClsEngine</td><td>Image Classification</td><td>❌</td></tr>
+<tr><td>YOLOv11</td><td>vision/yolov11</td><td>DetEngine</td><td>Object Detection</td><td>❌</td></tr>
+<tr><td>YOLOv11</td><td>vision/yolov11</td><td>SegEngine</td><td>Instance Segmentation</td><td>❌</td></tr>
+<tr><td>YOLOv11</td><td>vision/yolov11</td><td>PoseEngine</td><td>Pose Estimation</td><td>❌</td></tr>
+<tr><td>YOLOv11</td><td>vision/yolov11</td><td>OBBEngine</td><td>OBB Detection</td><td>❌</td></tr>
+<tr><td>YOLOv11</td><td>vision/yolov11</td><td>ClsEngine</td><td>Image Classification</td><td>❌</td></tr>
+<tr><td>SAM2</td><td>vision/sam2</td><td>Engine</td><td>Image Segmentation</td><td>❌</td></tr>
+<tr><td>SAM3</td><td>vision/sam3</td><td>Engine</td><td>Image Segmentation</td><td>❌</td></tr>
+<tr><td>RF-DETR</td><td>vision/rfdetr</td><td>DetEngine</td><td>Object Detection</td><td>✅</td></tr>
+<tr><td>RF-DETR</td><td>vision/rfdetr</td><td>SegEngine</td><td>Instance Segmentation</td><td>✅</td></tr>
+</tbody></table>
+
+<h3>Error Code Mapping</h3>
+<table>
+<thead><tr><th>Code</th><th>Name</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>OK</td><td>Success</td></tr>
+<tr><td>1</td><td>FAIL</td><td>General failure</td></tr>
+<tr><td>2</td><td>INVALID_ARGUMENT</td><td>Invalid argument</td></tr>
+<tr><td>3</td><td>NO_SUCHFILE</td><td>File not found</td></tr>
+<tr><td>4</td><td>NO_MODEL</td><td>Model not found</td></tr>
+<tr><td>5</td><td>ENGINE_ERROR</td><td>Engine error</td></tr>
+<tr><td>6</td><td>RUNTIME_EXCEPTION</td><td>Runtime exception</td></tr>
+<tr><td>7</td><td>INVALID_PROTOBUF</td><td>Invalid Protobuf</td></tr>
+<tr><td>9</td><td>NOT_IMPLEMENTED</td><td>Not implemented</td></tr>
+<tr><td>10</td><td>INVALID_GRAPH</td><td>Invalid computation graph</td></tr>
+<tr><td>11</td><td>EP_FAIL</td><td>Execution Provider failure</td></tr>
+</tbody></table>
+
+<h2 id="faq" class="sa">FAQ</h2>
+
+<div class="card">
+<h4>Q: How do I get the ONNX Runtime shared library?</h4>
+<p>Download the pre-built package for your platform from <a href="https://github.com/microsoft/onnxruntime/releases">ONNX Runtime Releases</a>:</p>
+<ul>
+<li>Windows: <code class="ic">onnxruntime-win-x64-1.x.x.zip</code> (CPU) or <code class="ic">onnxruntime-win-x64-gpu-1.x.x.zip</code> (GPU)</li>
+<li>Linux: <code class="ic">onnxruntime-linux-x64-1.x.x.tgz</code></li>
+<li>macOS: <code class="ic">onnxruntime-osx-arm64-1.x.x.tgz</code></li>
+</ul>
+</div>
+
+<div class="card">
+<h4>Q: Why does CUDA enablement fail?</h4>
+<p>Please verify:</p>
+<ol>
+<li>You are using the GPU version of the ONNX Runtime shared library</li>
+<li>CUDA Toolkit and cuDNN are correctly installed</li>
+<li>Confirm <code class="ic">CUDAExecutionProvider</code> is in the list via <code class="ic">engine.AvailableProviders()</code></li>
+</ol>
+</div>
+
+<div class="card">
+<h4>Q: Can multiple models share the same Engine?</h4>
+<p>Yes. The vision layer's global Engine singleton ensures all models share the same ONNX Runtime environment. Each model creates its own independent Session, but they share the same Engine instance and DLL underneath.</p>
+</div>
+
+<div class="card">
+<h4>Q: How do I choose between YOLO26 and YOLOv11?</h4>
+<p>YOLO26 is the latest generation model with higher accuracy, and its detection output is already NMS-postprocessed (faster inference). YOLOv11 is the previous generation model with post-processing that includes the traditional NMS pipeline. YOLO26 is recommended as the primary choice.</p>
+</div>
+
+<div class="card">
+<h4>Q: What is the difference between Predict and PredictBatch?</h4>
+<p><code class="ic">Predict</code> processes a single image, while <code class="ic">PredictBatch</code> processes multiple images at once. For models that support batching, <code class="ic">Predict</code> delegates to <code class="ic">PredictBatch</code> internally, so there is no overhead for single-frame scenarios. Batch inference can significantly improve throughput on GPU.</p>
+</div>
+
+<div class="card">
+<h4>Q: How do I handle memory leaks?</h4>
+<p>Ensure all <code class="ic">Value</code> instances created via <code class="ic">NewTensor</code> / <code class="ic">Session.Run</code> have <code class="ic">Destroy()</code> called. It is recommended to use the <code class="ic">defer value.Destroy()</code> pattern. Session and Engine also need <code class="ic">Destroy()</code> called when no longer in use.</p>
+</div>
+
+<div class="card">
+<h4>Q: Which platforms are supported?</h4>
+<p>Windows, Linux, and macOS are supported. Dynamic library loading is adapted for different platforms via the <code class="ic">internal/sys</code> package:</p>
+<ul>
+<li>Windows: Uses <code class="ic">LoadLibrary</code> to load <code class="ic">.dll</code></li>
+<li>Linux/macOS: Uses <code class="ic">dlopen</code> to load <code class="ic">.so</code> / <code class="ic">.dylib</code></li>
+</ul>
+</div>
+
+<div class="card">
+<h4>Q: How do I customize model post-processing?</h4>
+<p>You can use the <code class="ic">ort</code> low-level API directly:</p>
+<ol>
+<li>Create a Session via <code class="ic">Engine.NewSession()</code></li>
+<li>Create input Tensors via <code class="ic">Engine.NewTensor()</code></li>
+<li>Execute inference via <code class="ic">Session.Run()</code></li>
+<li>Read output data via <code class="ic">ort.GetTensorData[T]()</code></li>
+<li>Implement your own post-processing logic</li>
+</ol>
+</div>
+
+<footer style="margin-top:64px;padding-top:24px;border-top:1px solid var(--border);color:var(--text-light);font-size:13px;text-align:center">
+<p>raven-onnxruntime User Manual · Apache License 2.0 · Based on ONNX Runtime + purego</p>
+</footer>
+
+</main>
+</body>
+</html>
