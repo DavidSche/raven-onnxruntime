@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"sort"
+	"strings"
 	"time"
 
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
@@ -15,6 +16,79 @@ import (
 type SegEngine struct {
 	session *ort.Session
 	config  Config
+}
+
+// resolveSegOutputs resolves boxes, logits, and masks outputs from ONNX model output values.
+// It first tries to match by name (pred_boxes, pred_logits, pred_masks), then falls back
+// to shape-based detection.
+func resolveSegOutputs(outputValues map[string]*ort.Value) (*ort.Value, *ort.Value, *ort.Value, error) {
+	// Collect all output shapes for logging
+	outputShapes := make(map[string][]int64)
+	for name, v := range outputValues {
+		if v == nil {
+			continue
+		}
+		shape, err := v.GetShape()
+		if err != nil {
+			continue
+		}
+		outputShapes[name] = shape
+	}
+	ortlog.Debugw("seg engine output shapes", "shapes", outputShapes)
+
+	var boxesOut, logitsOut, masksOut *ort.Value
+
+	// Strategy 1: Match by name first, then validate shape
+	for name, shape := range outputShapes {
+		v := outputValues[name]
+		switch name {
+		case "pred_boxes":
+			if len(shape) == 3 && shape[2] == 4 {
+				boxesOut = v
+			}
+		case "pred_logits":
+			if len(shape) == 3 {
+				logitsOut = v
+			}
+		case "pred_masks":
+			if len(shape) == 4 {
+				masksOut = v
+			}
+		}
+	}
+
+	// Strategy 2: Fallback to shape-based detection for any missing outputs
+	if boxesOut == nil || logitsOut == nil || masksOut == nil {
+		for name, shape := range outputShapes {
+			v := outputValues[name]
+			switch len(shape) {
+			case 3:
+				if shape[2] == 4 && boxesOut == nil {
+					boxesOut = v
+				} else if logitsOut == nil {
+					logitsOut = v
+				}
+			case 4:
+				if masksOut == nil {
+					masksOut = v
+				}
+			}
+		}
+	}
+
+	if boxesOut == nil || logitsOut == nil || masksOut == nil {
+		// Log detailed shape info for debugging
+		shapeInfo := make([]string, 0, len(outputShapes))
+		for name, shape := range outputShapes {
+			shapeInfo = append(shapeInfo, fmt.Sprintf("%s=%v", name, shape))
+		}
+		for _, v := range outputValues {
+			v.Destroy()
+		}
+		return nil, nil, nil, fmt.Errorf("segmentation model requires boxes(3D,4), logits(3D) and masks(4D) outputs, got [%s]", strings.Join(shapeInfo, ", "))
+	}
+
+	return boxesOut, logitsOut, masksOut, nil
 }
 
 func NewSegEngine(cfg Config) (*SegEngine, error) {
@@ -43,14 +117,20 @@ func NewSegEngine(cfg Config) (*SegEngine, error) {
 		return nil, fmt.Errorf("failed to create ONNX session: %w", err)
 	}
 
-	if cfg.InputSize == 0 {
-		inputSize, dynamicBatch := detectInputSizeAndDynamicBatch(cfg.ModelPath)
-		cfg.InputSize = inputSize
-		if !cfg.DynamicBatch {
-			cfg.DynamicBatch = dynamicBatch
-		}
-		ortlog.Infow("auto-detected input size from model path", "inputSize", cfg.InputSize, "dynamicBatch", cfg.DynamicBatch, "modelPath", cfg.ModelPath)
+	// Always detect input size from model to ensure correctness,
+	// even if cfg.InputSize is explicitly set (it may be wrong).
+	detectedSize, dynamicBatch := detectInputSizeAndDynamicBatch(cfg.ModelPath)
+	if cfg.InputSize != 0 && cfg.InputSize != detectedSize {
+		ortlog.Warnw("input_size mismatch, overriding with detected value",
+			"configured", cfg.InputSize,
+			"detected", detectedSize,
+			"modelPath", cfg.ModelPath)
 	}
+	cfg.InputSize = detectedSize
+	if !cfg.DynamicBatch {
+		cfg.DynamicBatch = dynamicBatch
+	}
+	ortlog.Infow("input size resolved", "inputSize", cfg.InputSize, "dynamicBatch", cfg.DynamicBatch, "modelPath", cfg.ModelPath)
 
 	ortlog.Infow("RF-DETR segmentation engine created successfully",
 		"modelPath", cfg.ModelPath,
@@ -90,34 +170,9 @@ func (e *SegEngine) Predict(img image.Image) ([]SegResult, error) {
 		return nil, fmt.Errorf("inference failed: %w", err)
 	}
 
-	var boxesOut, logitsOut, masksOut *ort.Value
-	for _, name := range e.session.OutputNames {
-		v, ok := outputValues[name]
-		if !ok || v == nil {
-			continue
-		}
-		shape, err := v.GetShape()
-		if err != nil {
-			v.Destroy()
-			continue
-		}
-		switch len(shape) {
-		case 3:
-			if shape[2] == 4 {
-				boxesOut = v
-			} else {
-				logitsOut = v
-			}
-		case 4:
-			masksOut = v
-		}
-	}
-
-	if boxesOut == nil || logitsOut == nil || masksOut == nil {
-		for _, v := range outputValues {
-			v.Destroy()
-		}
-		return nil, fmt.Errorf("segmentation model requires boxes(3D,4), logits(3D) and masks(4D) outputs, got %v", e.session.OutputNames)
+	boxesOut, logitsOut, masksOut, err := resolveSegOutputs(outputValues)
+	if err != nil {
+		return nil, err
 	}
 
 	return e.postprocess(boxesOut, logitsOut, masksOut, params)
@@ -298,34 +353,9 @@ func (e *SegEngine) PredictBatch(imgs []image.Image) ([][]SegResult, error) {
 	}
 	runElapsed := time.Since(runStart)
 
-	var boxesOut, logitsOut, masksOut *ort.Value
-	for _, name := range e.session.OutputNames {
-		v, ok := outputValues[name]
-		if !ok || v == nil {
-			continue
-		}
-		shape, err := v.GetShape()
-		if err != nil {
-			v.Destroy()
-			continue
-		}
-		switch len(shape) {
-		case 3:
-			if shape[2] == 4 {
-				boxesOut = v
-			} else {
-				logitsOut = v
-			}
-		case 4:
-			masksOut = v
-		}
-	}
-
-	if boxesOut == nil || logitsOut == nil || masksOut == nil {
-		for _, v := range outputValues {
-			v.Destroy()
-		}
-		return nil, fmt.Errorf("segmentation model requires boxes(3D,4), logits(3D) and masks(4D) outputs, got %v", e.session.OutputNames)
+	boxesOut, logitsOut, masksOut, err := resolveSegOutputs(outputValues)
+	if err != nil {
+		return nil, err
 	}
 
 	results, err := e.postprocessBatch(boxesOut, logitsOut, masksOut, paramsList)

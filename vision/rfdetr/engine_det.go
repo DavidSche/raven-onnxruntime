@@ -45,14 +45,20 @@ func NewDetEngine(cfg Config) (*DetEngine, error) {
 		return nil, fmt.Errorf("failed to create ONNX session: %w", err)
 	}
 
-	if cfg.InputSize == 0 {
-		inputSize, dynamicBatch := detectInputSizeAndDynamicBatch(cfg.ModelPath)
-		cfg.InputSize = inputSize
-		if !cfg.DynamicBatch {
-			cfg.DynamicBatch = dynamicBatch
-		}
-		ortlog.Infow("auto-detected input size from model path", "inputSize", cfg.InputSize, "dynamicBatch", cfg.DynamicBatch, "modelPath", cfg.ModelPath)
+	// Always detect input size from model to ensure correctness,
+	// even if cfg.InputSize is explicitly set (it may be wrong).
+	detectedSize, dynamicBatch := detectInputSizeAndDynamicBatch(cfg.ModelPath)
+	if cfg.InputSize != 0 && cfg.InputSize != detectedSize {
+		ortlog.Warnw("input_size mismatch, overriding with detected value",
+			"configured", cfg.InputSize,
+			"detected", detectedSize,
+			"modelPath", cfg.ModelPath)
 	}
+	cfg.InputSize = detectedSize
+	if !cfg.DynamicBatch {
+		cfg.DynamicBatch = dynamicBatch
+	}
+	ortlog.Infow("input size resolved", "inputSize", cfg.InputSize, "dynamicBatch", cfg.DynamicBatch, "modelPath", cfg.ModelPath)
 
 	ortlog.Infow("RF-DETR detection engine created successfully",
 		"modelPath", cfg.ModelPath,
