@@ -50,6 +50,10 @@ A pure Go ONNX Runtime visual model inference library, using [purego](https://gi
 | YOLOv11 | Classification | `vision/yolov11` | ✅ | ✅ |
 | RF-DETR | Detection | `vision/rfdetr` | ✅ PredictBatch | ✅ |
 | RF-DETR | Segmentation | `vision/rfdetr` | ✅ PredictBatch | ✅ |
+| LTDETR | Detection | `vision/ltdetr` | ✅ PredictBatch | ✅ |
+| EdgeCrafter | Detection | `vision/edgecrafter` | ✅ PredictBatch | ✅ |
+| EdgeCrafter | Segmentation | `vision/edgecrafter` | ✅ PredictBatch | ✅ |
+| EdgeCrafter | Pose Estimation | `vision/edgecrafter` | ✅ PredictBatch | ✅ |
 | SAM2 | Image Segmentation | `vision/sam2` | — | ✅ |
 | SAM3 / SAM3H / SAM3.1 | Image Segmentation | `vision/sam3` | — | ✅ |
 
@@ -77,6 +81,8 @@ raven-onnxruntime/
 │   ├── yolo26/                 # YOLO26 models (det/seg/pose/obb/cls)
 │   ├── yolov11/                # YOLOv11 models (det/seg/pose/obb/cls)
 │   ├── rfdetr/                 # RF-DETR models (det/seg)
+│   ├── ltdetr/                 # LTDETR models (det)
+│   ├── edgecrafter/            # EdgeCrafter models (det/seg/pose)
 │   ├── sam2/                   # SAM2 image segmentation
 │   └── sam3/                   # SAM3H / SAM3.1 image segmentation
 ├── include/                    # ONNX Runtime C API headers
@@ -158,6 +164,64 @@ defer engine.Destroy()
 results, err := engine.Predict(img)
 // Or batch inference (auto-detects dynamic batch support):
 // batchResults, err := engine.PredictBatch([]image.Image{img1, img2})
+```
+
+### LTDETR Detection
+
+```go
+cfg := ltdetr.DefaultDetConfig()
+cfg.ModelPath = "dinov3_vits16_ltdetr_coco.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := ltdetr.NewDetEngine(cfg)
+defer engine.Destroy()
+
+results, err := engine.Predict(img)
+// Or batch inference:
+// batchResults, err := engine.PredictBatch([]image.Image{img1, img2})
+```
+
+### EdgeCrafter Detection
+
+```go
+cfg := edgecrafter.DefaultDetConfig()
+cfg.ModelPath = "ecdet-s.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := edgecrafter.NewDetEngine(cfg)
+defer engine.Destroy()
+
+results, err := engine.Predict(img)
+// Or batch inference:
+// batchResults, err := engine.PredictBatch([]image.Image{img1, img2})
+```
+
+### EdgeCrafter Segmentation
+
+```go
+cfg := edgecrafter.DefaultSegConfig()
+cfg.ModelPath = "ecseg-s.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := edgecrafter.NewSegEngine(cfg)
+defer engine.Destroy()
+
+results, err := engine.Predict(img)
+// results[i].Mask contains the instance segmentation mask
+```
+
+### EdgeCrafter Pose Estimation
+
+```go
+cfg := edgecrafter.DefaultPoseConfig()
+cfg.ModelPath = "ecpose-s.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := edgecrafter.NewPoseEngine(cfg)
+defer engine.Destroy()
+
+results, err := engine.Predict(img)
+// results[i].KeyPoints contains keypoint coordinates
 ```
 
 ### SAM2 Segmentation

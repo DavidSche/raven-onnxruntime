@@ -74,7 +74,12 @@ th{background:#f1f5f9;font-weight:600;text-align:left}th,td{padding:10px 14px;bo
 <a class="nav-item" href="#yolov11">YOLOv11</a>
 <a class="nav-item" href="#sam2">SAM2</a>
 <a class="nav-item" href="#sam3">SAM3 / SAM3.1</a>
-<a class="nav-item" href="#rfdetr">RF-DETR</a></div>
+<a class="nav-item" href="#rfdetr">RF-DETR</a>
+<a class="nav-item" href="#ltdetr">LTDETR</a>
+<a class="nav-item" href="#edgecrafter">EdgeCrafter</a>
+<a class="nav-item sub" href="#edgecrafter-det">目标检测</a>
+<a class="nav-item sub" href="#edgecrafter-seg">实例分割</a>
+<a class="nav-item sub" href="#edgecrafter-pose">姿态估计</a></div>
 <div class="nav-section"><div class="nav-section-title">进阶主题</div>
 <a class="nav-item" href="#batch">批量推理</a>
 <a class="nav-item" href="#pipeline">模型流水线</a>
@@ -117,7 +122,9 @@ th{background:#f1f5f9;font-weight:600;text-align:left}th,td{padding:10px 14px;bo
 │   ├── yolov11/                # YOLOv11 模型 (det/seg/pose/obb/cls)
 │   ├── sam2/                   # SAM2 图像分割
 │   ├── sam3/                   # SAM3/SAM3.1 图像分割
-│   └── rfdetr/                 # RF-DETR 模型 (det/seg)
+│   ├── rfdetr/                 # RF-DETR 模型 (det/seg)
+│   ├── ltdetr/                 # LTDETR 模型 (det)
+│   └── edgecrafter/            # EdgeCrafter 模型 (det/seg/pose)
 ├── include/                    # ONNX Runtime C API 头文件
 ├── examples/                   # 使用示例
 ├── go.mod
@@ -190,6 +197,11 @@ func main() {
 │  │pose/obb/ │ │pose/obb/ │ │          │ │      │ │       │ │
 │  │cls       │ │cls       │ │          │ │      │ │       │ │
 │  └────┬─────┘ └────┬─────┘ └────┬─────┘ └──┬───┘ └──┬────┘ │
+│  ┌────┴─────┐ ┌────┴─────┐                                     │
+│  │  LTDETR  │ │EdgeCrafter│                                    │
+│  │   det    │ │det/seg/   │                                     │
+│  │          │ │pose       │                                     │
+│  └────┬─────┘ └────┬─────┘                                     │
 │       └─────────────┴────────────┴──────────┴─────────┘      │
 │                           │                                   │
 │                    OnnxConfig.New()                           │
@@ -679,6 +691,145 @@ type SegResult struct {
     Mask    *image.Gray
 }</pre>
 
+<h2 id="ltdetr" class="sa">LTDETR</h2>
+<p>LTDETR 是基于 DINOv3 骨干网络的轻量级检测 Transformer 模型，支持目标检测和批量推理。包路径：<code class="ic">github.com/DavidSche/raven-onnxruntime/vision/ltdetr</code></p>
+
+<h3>Config 配置</h3>
+<pre>type Config struct {
+    ModelPath          string
+    OnnxRuntimeLibPath string
+    ConfThreshold      float32       // 默认 0.5
+    InputSize          int           // 默认 0（自动检测）
+    NumClasses         int           // 默认 80
+    MaxDetections      int           // 默认 300
+    DynamicBatch       bool
+    UseCuda            bool
+    NumThreads         int
+    EnableCpuMemArena  bool
+    ApiVersion         ort.ApiVersion
+}</pre>
+
+<h3>目标检测 (DetEngine)</h3>
+<pre>cfg := ltdetr.DefaultDetConfig()
+cfg.ModelPath = "models/ltdetr/dinov3_vits16_ltdetr_coco.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := ltdetr.NewDetEngine(cfg)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("test.jpg")
+results, err := engine.Predict(img)
+
+// 批量推理
+batchResults, err := engine.PredictBatch([]image.Image{img1, img2})
+
+type DetResult struct {
+    ClassID int
+    Score   float32
+    Box     image.Rectangle
+}</pre>
+
+<h2 id="edgecrafter" class="sa">EdgeCrafter</h2>
+<p>EdgeCrafter 是高性能边缘推理模型系列，支持目标检测、实例分割和姿态估计，并支持动态批量推理。包路径：<code class="ic">github.com/DavidSche/raven-onnxruntime/vision/edgecrafter</code></p>
+
+<h3>Config 配置</h3>
+<pre>type Config struct {
+    ModelPath          string
+    OnnxRuntimeLibPath string
+    ConfThreshold      float32       // 默认 0.5
+    IOUThreshold       float32       // 默认 0.45
+    MaskThreshold      float32       // 默认 0.5
+    InputSize          int           // 默认 0（自动检测）
+    NumClasses         int           // 默认 80（检测/分割）/ 2（姿态）
+    MaxDetections      int           // 默认 300
+    NumBodyPoints      int           // 默认 17（姿态估计）
+    NumSelect          int           // 默认 60（姿态估计）
+    DynamicBatch       bool
+    UseCuda            bool
+    NumThreads         int
+    EnableCpuMemArena  bool
+    ApiVersion         ort.ApiVersion
+}</pre>
+
+<div class="tip"><div class="tip-title">自动检测</div><p>当 <code class="ic">InputSize</code> 为 0 时，EdgeCrafter 引擎会从模型路径自动检测输入尺寸和是否支持动态批量。模型路径中包含 "ecseg" 自动识别为分割模型，包含 "ecpose" 自动识别为姿态模型。</p></div>
+
+<h3 id="edgecrafter-det" class="sa">目标检测 (DetEngine)</h3>
+<pre>cfg := edgecrafter.DefaultDetConfig()
+cfg.ModelPath = "models/edgecrafter/ecdet-s.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := edgecrafter.NewDetEngine(cfg)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("test.jpg")
+results, err := engine.Predict(img)
+
+// 批量推理
+batchResults, err := engine.PredictBatch([]image.Image{img1, img2})
+
+type DetResult struct {
+    ClassID int
+    Score   float32
+    Box     image.Rectangle
+}</pre>
+
+<h3 id="edgecrafter-seg" class="sa">实例分割 (SegEngine)</h3>
+<pre>cfg := edgecrafter.DefaultSegConfig()
+cfg.ModelPath = "models/edgecrafter/ecseg-s.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := edgecrafter.NewSegEngine(cfg)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("test.jpg")
+results, err := engine.Predict(img)
+
+for idx, res := range results {
+    fmt.Printf("ClassID: %d, Score: %.2f\n", res.ClassID, res.Score)
+    imageutil.Save(fmt.Sprintf("ecseg_mask_%d.png", idx), res.Mask, 100)
+}
+
+type SegResult struct {
+    ClassID int
+    Score   float32
+    Box     image.Rectangle
+    Mask    *image.Gray
+}</pre>
+
+<h3 id="edgecrafter-pose" class="sa">姿态估计 (PoseEngine)</h3>
+<pre>cfg := edgecrafter.DefaultPoseConfig()
+cfg.ModelPath = "models/edgecrafter/ecpose-s.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := edgecrafter.NewPoseEngine(cfg)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("person.jpg")
+results, err := engine.Predict(img)
+
+for _, res := range results {
+    fmt.Printf("ClassID: %d, Score: %.2f, Box: %v\n", res.ClassID, res.Score, res.Box)
+    for i, kp := range res.KeyPoints {
+        fmt.Printf("  Keypoint %d: X=%d, Y=%d, Score=%.2f\n", i, kp.X, kp.Y, kp.Score)
+    }
+}
+
+type PoseResult struct {
+    ClassID   int
+    Score     float32
+    Box       image.Rectangle
+    KeyPoints []KeyPoint
+}
+
+type KeyPoint struct {
+    X, Y  int
+    Score float32
+}</pre>
+
 <h2 id="batch" class="sa">批量推理</h2>
 <p>批量推理允许一次处理多张图片，充分利用 GPU 并行能力，显著提升吞吐量。</p>
 
@@ -920,6 +1071,10 @@ cfg.ApiVersion = ort.ApiVersion23</pre>
 <tr><td>SAM3</td><td>vision/sam3</td><td>Engine</td><td>图像分割</td><td>❌</td></tr>
 <tr><td>RF-DETR</td><td>vision/rfdetr</td><td>DetEngine</td><td>目标检测</td><td>✅</td></tr>
 <tr><td>RF-DETR</td><td>vision/rfdetr</td><td>SegEngine</td><td>实例分割</td><td>✅</td></tr>
+<tr><td>LTDETR</td><td>vision/ltdetr</td><td>DetEngine</td><td>目标检测</td><td>✅</td></tr>
+<tr><td>EdgeCrafter</td><td>vision/edgecrafter</td><td>DetEngine</td><td>目标检测</td><td>✅</td></tr>
+<tr><td>EdgeCrafter</td><td>vision/edgecrafter</td><td>SegEngine</td><td>实例分割</td><td>✅</td></tr>
+<tr><td>EdgeCrafter</td><td>vision/edgecrafter</td><td>PoseEngine</td><td>姿态估计</td><td>✅</td></tr>
 </tbody></table>
 
 <h3>错误码映射</h3>

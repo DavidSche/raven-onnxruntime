@@ -50,6 +50,10 @@
 | YOLOv11 | 分类 | `vision/yolov11` | ✅ | ✅ |
 | RF-DETR | 检测 | `vision/rfdetr` | ✅ PredictBatch | ✅ |
 | RF-DETR | 分割 | `vision/rfdetr` | ✅ PredictBatch | ✅ |
+| LTDETR | 检测 | `vision/ltdetr` | ✅ PredictBatch | ✅ |
+| EdgeCrafter | 检测 | `vision/edgecrafter` | ✅ PredictBatch | ✅ |
+| EdgeCrafter | 分割 | `vision/edgecrafter` | ✅ PredictBatch | ✅ |
+| EdgeCrafter | 姿态估计 | `vision/edgecrafter` | ✅ PredictBatch | ✅ |
 | SAM2 | 图像分割 | `vision/sam2` | — | ✅ |
 | SAM3 / SAM3H / SAM3.1 | 图像分割 | `vision/sam3` | — | ✅ |
 
@@ -77,6 +81,8 @@ raven-onnxruntime/
 │   ├── yolo26/                 # YOLO26 模型（det/seg/pose/obb/cls）
 │   ├── yolov11/                # YOLOv11 模型（det/seg/pose/obb/cls）
 │   ├── rfdetr/                 # RF-DETR 模型（det/seg）
+│   ├── ltdetr/                 # LTDETR 模型（det）
+│   ├── edgecrafter/            # EdgeCrafter 模型（det/seg/pose）
 │   ├── sam2/                   # SAM2 图像分割
 │   └── sam3/                   # SAM3H / SAM3.1 图像分割
 ├── include/                    # ONNX Runtime C API 头文件
@@ -158,6 +164,64 @@ defer engine.Destroy()
 results, err := engine.Predict(img)
 // 或批量推理（自动检测动态 batch 支持）：
 // batchResults, err := engine.PredictBatch([]image.Image{img1, img2})
+```
+
+### LTDETR 检测
+
+```go
+cfg := ltdetr.DefaultDetConfig()
+cfg.ModelPath = "dinov3_vits16_ltdetr_coco.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := ltdetr.NewDetEngine(cfg)
+defer engine.Destroy()
+
+results, err := engine.Predict(img)
+// 或批量推理：
+// batchResults, err := engine.PredictBatch([]image.Image{img1, img2})
+```
+
+### EdgeCrafter 检测
+
+```go
+cfg := edgecrafter.DefaultDetConfig()
+cfg.ModelPath = "ecdet-s.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := edgecrafter.NewDetEngine(cfg)
+defer engine.Destroy()
+
+results, err := engine.Predict(img)
+// 或批量推理：
+// batchResults, err := engine.PredictBatch([]image.Image{img1, img2})
+```
+
+### EdgeCrafter 分割
+
+```go
+cfg := edgecrafter.DefaultSegConfig()
+cfg.ModelPath = "ecseg-s.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := edgecrafter.NewSegEngine(cfg)
+defer engine.Destroy()
+
+results, err := engine.Predict(img)
+// results[i].Mask 包含实例分割掩码
+```
+
+### EdgeCrafter 姿态估计
+
+```go
+cfg := edgecrafter.DefaultPoseConfig()
+cfg.ModelPath = "ecpose-s.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := edgecrafter.NewPoseEngine(cfg)
+defer engine.Destroy()
+
+results, err := engine.Predict(img)
+// results[i].KeyPoints 包含关键点坐标
 ```
 
 ### SAM2 分割
