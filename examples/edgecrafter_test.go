@@ -13,8 +13,8 @@ import (
 
 func TestEdgeCrafterDet(t *testing.T) {
 	cfg := edgecrafter.DefaultDetConfig()
-	cfg.ModelPath = "../models/edgecrafter/ecdet-s.onnx"
-	cfg.OnnxRuntimeLibPath = "../lib/onnxruntime.dll"
+	cfg.ModelPath = ExampleModelPath("ecdet", "ecdet_s.onnx")
+	cfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 
 	engine, err := edgecrafter.NewDetEngine(cfg)
 	if err != nil {
@@ -22,7 +22,7 @@ func TestEdgeCrafterDet(t *testing.T) {
 	}
 	defer engine.Destroy()
 
-	img, _ := imageutil.Open("./test.png")
+	img := mustOpenExampleImage(t, "test.png")
 	results, err := engine.Predict(img)
 	if err != nil {
 		t.Fatalf("prediction failed: %v", err)
@@ -35,7 +35,7 @@ func TestEdgeCrafterDet(t *testing.T) {
 		fmt.Printf("Class: %d, Score: %.2f, Box: %v\n", res.ClassID, res.Score, res.Box)
 		imageutil.DrawThickRectOutline(targetImg, res.Box, color.RGBA{R: 255, G: 0, B: 0, A: 255}, 3)
 	}
-	err = imageutil.Save("edgecrafter_det.jpg", targetImg, 50)
+	err = imageutil.Save(exampleArtifactPath("edgecrafter_det.jpg"), targetImg, 50)
 	if err != nil {
 		fmt.Printf("failed to save image: %v", err)
 	}
@@ -43,8 +43,8 @@ func TestEdgeCrafterDet(t *testing.T) {
 
 func TestEdgeCrafterDetBatch(t *testing.T) {
 	cfg := edgecrafter.DefaultDetConfig()
-	cfg.ModelPath = "../models/edgecrafter/ecdet-s.onnx"
-	cfg.OnnxRuntimeLibPath = "../lib/onnxruntime.dll"
+	cfg.ModelPath = ExampleModelPath("ecdet", "ecdet_s.onnx")
+	cfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 	cfg.DynamicBatch = true
 
 	engine, err := edgecrafter.NewDetEngine(cfg)
@@ -53,8 +53,8 @@ func TestEdgeCrafterDetBatch(t *testing.T) {
 	}
 	defer engine.Destroy()
 
-	img1, _ := imageutil.Open("./test.png")
-	img2, _ := imageutil.Open("./ship.jpg")
+	img1 := mustOpenExampleImage(t, "test.png")
+	img2 := mustOpenExampleImage(t, "ship.jpg")
 
 	results, err := engine.PredictBatch([]image.Image{img1, img2})
 	if err != nil {
@@ -71,8 +71,8 @@ func TestEdgeCrafterDetBatch(t *testing.T) {
 
 func TestEdgeCrafterSeg(t *testing.T) {
 	cfg := edgecrafter.DefaultSegConfig()
-	cfg.ModelPath = "../models/edgecrafter/ecseg-s.onnx"
-	cfg.OnnxRuntimeLibPath = "../lib/onnxruntime.dll"
+	cfg.ModelPath = ExampleModelPath("ecdet", "ecseg_s.onnx")
+	cfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 
 	engine, err := edgecrafter.NewSegEngine(cfg)
 	if err != nil {
@@ -80,7 +80,7 @@ func TestEdgeCrafterSeg(t *testing.T) {
 	}
 	defer engine.Destroy()
 
-	img, _ := imageutil.Open("./test.png")
+	img := mustOpenExampleImage(t, "test.png")
 	results, err := engine.Predict(img)
 	if err != nil {
 		t.Fatalf("prediction failed: %v", err)
@@ -89,7 +89,7 @@ func TestEdgeCrafterSeg(t *testing.T) {
 	fmt.Printf("detected objects: %d\n", len(results))
 	for idx, res := range results {
 		fmt.Printf("Class: %d, Score: %.2f, Box: %v\n", res.ClassID, res.Score, res.Box)
-		err := imageutil.Save(fmt.Sprintf("edgecrafter_seg_mask_%d.png", idx), res.Mask, 100)
+		err := imageutil.Save(exampleArtifactPath(fmt.Sprintf("edgecrafter_seg_mask_%d.png", idx)), res.Mask, 100)
 		if err != nil {
 			fmt.Printf("failed to save mask: %v", err)
 		}
@@ -98,8 +98,8 @@ func TestEdgeCrafterSeg(t *testing.T) {
 
 func TestEdgeCrafterPose(t *testing.T) {
 	cfg := edgecrafter.DefaultPoseConfig()
-	cfg.ModelPath = "../models/edgecrafter/ecpose-s.onnx"
-	cfg.OnnxRuntimeLibPath = "../lib/onnxruntime.dll"
+	cfg.ModelPath = ExampleModelPath("ecdet", "ecpose_s.onnx")
+	cfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 
 	engine, err := edgecrafter.NewPoseEngine(cfg)
 	if err != nil {
@@ -107,7 +107,7 @@ func TestEdgeCrafterPose(t *testing.T) {
 	}
 	defer engine.Destroy()
 
-	img, _ := imageutil.Open("./person.jpg")
+	img := mustOpenExampleImage(t, "person.jpg")
 	results, err := engine.Predict(img)
 	if err != nil {
 		t.Fatalf("prediction failed: %v", err)
@@ -140,7 +140,7 @@ func TestEdgeCrafterPose(t *testing.T) {
 			}
 		}
 	}
-	err = imageutil.Save("edgecrafter_pose.jpg", targetImg, 50)
+	err = imageutil.Save(exampleArtifactPath("edgecrafter_pose.jpg"), targetImg, 50)
 	if err != nil {
 		fmt.Printf("failed to save image: %v", err)
 	}

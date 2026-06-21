@@ -1,4 +1,4 @@
-package sam3
+package efficientsam3
 
 import (
 	"path/filepath"
@@ -20,8 +20,8 @@ const (
 const (
 	inputSize     = 1008
 	maskThreshold = 0.0
-	textSeqLen    = 32
-	padTokenId    = 49407
+	textSeqLen    = 16 // EfficientSAM3 LiteText default context length
+	padTokenId    = 0  // MobileCLIP padding token
 )
 
 type Point struct {
@@ -29,7 +29,7 @@ type Point struct {
 	Label Label
 }
 
-// Config SAM3 模型配置
+// Config EfficientSAM3 模型配置
 type Config struct {
 	// ModelPath 模型包目录路径 (包含 manifest.json 和 ONNX 子模型)
 	ModelPath          string
@@ -45,7 +45,7 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		OnnxRuntimeLibPath: ort.DefaultLibraryPath(),
-		ModelPath:          modelpath.ModelPath("sam3"),
+		ModelPath:          modelpath.ModelPath("efficientsam3"),
 	}
 }
 
@@ -59,9 +59,9 @@ func (c *Config) resolveSubModelPaths() (visionPath, textPath, decoderPath strin
 		decoderPath = mf.SubModelPath(c.ModelPath, "decoder")
 	} else {
 		// 回退：使用目录内默认文件名
-		visionPath = filepath.Join(c.ModelPath, "sam3_image_encoder.onnx")
-		textPath = filepath.Join(c.ModelPath, "sam3_language_encoder.onnx")
-		decoderPath = filepath.Join(c.ModelPath, "sam3_decoder.onnx")
+		visionPath = filepath.Join(c.ModelPath, "efficientsam3_image_encoder.onnx")
+		textPath = filepath.Join(c.ModelPath, "efficientsam3_language_encoder.onnx")
+		decoderPath = filepath.Join(c.ModelPath, "efficientsam3_decoder.onnx")
 	}
 	return
 }

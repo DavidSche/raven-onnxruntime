@@ -62,6 +62,7 @@ th{background:#f1f5f9;font-weight:600;text-align:left}th,td{padding:10px 14px;bo
 <a class="nav-item" href="#quickstart">快速上手</a></div>
 <div class="nav-section"><div class="nav-section-title">架构设计</div>
 <a class="nav-item" href="#architecture">整体架构</a>
+<a class="nav-item" href="#rmp">RMP 模型包规范</a>
 <a class="nav-item" href="#ort-package">ort 底层绑定</a>
 <a class="nav-item" href="#vision-package">vision 高层封装</a></div>
 <div class="nav-section"><div class="nav-section-title">模型引擎</div>
@@ -74,6 +75,7 @@ th{background:#f1f5f9;font-weight:600;text-align:left}th,td{padding:10px 14px;bo
 <a class="nav-item" href="#yolov11">YOLOv11</a>
 <a class="nav-item" href="#sam2">SAM2</a>
 <a class="nav-item" href="#sam3">SAM3 / SAM3.1</a>
+<a class="nav-item" href="#depth_anything3">Depth-Anything-3</a>
 <a class="nav-item" href="#rfdetr">RF-DETR</a>
 <a class="nav-item" href="#ltdetr">LTDETR</a>
 <a class="nav-item" href="#edgecrafter">EdgeCrafter</a>
@@ -122,6 +124,7 @@ th{background:#f1f5f9;font-weight:600;text-align:left}th,td{padding:10px 14px;bo
 │   ├── yolov11/                # YOLOv11 模型 (det/seg/pose/obb/cls)
 │   ├── sam2/                   # SAM2 图像分割
 │   ├── sam3/                   # SAM3/SAM3.1 图像分割
+│   └── depth_anything3/        # Depth-Anything-3 深度估计
 │   ├── rfdetr/                 # RF-DETR 模型 (det/seg)
 │   ├── ltdetr/                 # LTDETR 模型 (det)
 │   └── edgecrafter/            # EdgeCrafter 模型 (det/seg/pose)
@@ -165,7 +168,7 @@ import (
 
 func main() {
     cfg := yolo26.DefaultDetConfig()
-    cfg.ModelPath = "models/yolo26m.onnx"
+    cfg.ModelPath = "models/yolo26/yolo26m.onnx"
     cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
     cfg.UseCuda = true
 
@@ -224,6 +227,92 @@ func main() {
 <li><strong>vision 层</strong>：在 ort 层之上提供计算机视觉模型的高级封装，每个模型一个子包，包含预处理、推理、后处理的完整流程，开箱即用。</li>
 <li><strong>全局 Engine 单例</strong>：vision 层通过 <code class="ic">OnnxConfig.New()</code> 初始化全局 Engine 单例，整个进程只加载一次 DLL，所有模型共享同一 Engine 实例。</li>
 </ul>
+
+<h2 id="rmp" class="sa">RMP 模型包规范</h2>
+<p><strong>RMP (Raven Model Package)</strong> 是 raven-onnxruntime 定义的模型包规范，将 ONNX 子模型、元数据和辅助文件组织为自描述的目录结构。</p>
+
+<h3>设计动机</h3>
+<p>多子模型架构（如 Grounded-SAM-2 有 5 个 ONNX、SAM3 有 3 个 ONNX）如果由调用方逐个指定子模型路径，会导致配置膨胀且违反职责边界。RMP 规范让模型包自描述，调用方只需指定目录路径即可。</p>
+
+<h3>目录结构</h3>
+<pre>grounded-sam2/                 # 模型包根目录
+├── manifest.json              # RMP 清单文件 (必须)
+├── grounded_sam2_gdino_image_encoder.onnx
+├── grounded_sam2_gdino_text_encoder.onnx
+├── grounded_sam2_gdino_detector.onnx
+├── grounded_sam2_sam2_image_encoder.onnx
+├── grounded_sam2_sam2_mask_decoder.onnx
+└── labels.txt                 # (可选) 标签文件</pre>
+
+<h3>manifest.json 格式</h3>
+<pre>{
+  "format_version": "1.0",
+  "model_type": "grounded-sam2",
+  "model_version": "1.0.0",
+  "task": "segmentation",
+  "runtime": "onnxruntime",
+  "input_size": [800, 800],
+  "labels": null,
+  "sub_models": {
+    "gdino_image_encoder": "grounded_sam2_gdino_image_encoder.onnx",
+    "gdino_text_encoder": "grounded_sam2_gdino_text_encoder.onnx",
+    "gdino_detector": "grounded_sam2_gdino_detector.onnx",
+    "sam2_image_encoder": "grounded_sam2_sam2_image_encoder.onnx",
+    "sam2_mask_decoder": "grounded_sam2_sam2_mask_decoder.onnx"
+  },
+  "params": {
+    "gdino": { "hidden_dim": 256, "num_queries": 900 },
+    "sam2": { "image_size": 1024, "hidden_dim": 256 }
+  }
+}</pre>
+
+<h4>字段说明</h4>
+<table>
+<thead><tr><th>字段</th><th>类型</th><th>必须</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code class="ic">format_version</code></td><td>string</td><td>是</td><td>manifest 格式版本，当前为 "1.0"</td></tr>
+<tr><td><code class="ic">model_type</code></td><td>string</td><td>是</td><td>模型类型标识，如 "grounded-sam2"、"sam3"、"yolo26"</td></tr>
+<tr><td><code class="ic">model_version</code></td><td>string</td><td>否</td><td>模型版本号，如 "2.1.0"</td></tr>
+<tr><td><code class="ic">task</code></td><td>string</td><td>否</td><td>任务类型："detect"、"segmentation"、"classify"、"embedding"</td></tr>
+<tr><td><code class="ic">runtime</code></td><td>string</td><td>否</td><td>运行时类型，当前为 "onnxruntime"</td></tr>
+<tr><td><code class="ic">input_size</code></td><td>[int, int]</td><td>否</td><td>模型输入尺寸 [H, W]</td></tr>
+<tr><td><code class="ic">labels</code></td><td>string|null</td><td>否</td><td>标签文件相对路径，如 "labels.txt"</td></tr>
+<tr><td><code class="ic">sub_models</code></td><td>object</td><td>是</td><td>子模型名称 → ONNX 文件相对路径的映射</td></tr>
+<tr><td><code class="ic">params</code></td><td>object</td><td>否</td><td>模型结构参数，供引擎自动配置</td></tr>
+</tbody></table>
+
+<h3>使用方式</h3>
+<p>多子模型引擎（SAM2、SAM3、GroundingDINO、Grounded-SAM-2）的 Config 只需设置 <code class="ic">ModelPath</code> 指向模型包目录，引擎内部自动从 <code class="ic">manifest.json</code> 解析子模型路径：</p>
+<pre>// SAM3 示例 — 只需指定目录
+cfg := sam3.DefaultConfig()
+cfg.ModelPath = "./models/sam3"       // 目录内包含 manifest.json
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+cfg.UseCuda = true
+
+engine, err := sam3.NewEngine(cfg)    // 自动从 manifest.json 发现子模型</pre>
+
+<div class="tip"><div class="tip-title">回退机制</div><p>如果目录中没有 <code class="ic">manifest.json</code>，引擎会回退到默认文件名（如 <code class="ic">sam3_image_encoder.onnx</code>），确保向后兼容。</p></div>
+
+<h3>单模型 vs 多模型</h3>
+<table>
+<thead><tr><th>模型类型</th><th>子模型数</th><th>Config 字段</th><th>需要 manifest</th></tr></thead>
+<tbody>
+<tr><td>YOLO26 / YOLOv11</td><td>1</td><td><code class="ic">ModelPath</code> → .onnx 文件</td><td>否（可选）</td></tr>
+<tr><td>RF-DETR / LTDETR</td><td>1</td><td><code class="ic">ModelPath</code> → .onnx 文件</td><td>否（可选）</td></tr>
+<tr><td>SAM2</td><td>2</td><td><code class="ic">ModelPath</code> → 目录</td><td>推荐</td></tr>
+<tr><td>SAM3</td><td>3</td><td><code class="ic">ModelPath</code> → 目录</td><td>推荐</td></tr>
+<tr><td>GroundingDINO</td><td>3</td><td><code class="ic">ModelPath</code> → 目录</td><td>推荐</td></tr>
+<tr><td>Grounded-SAM-2</td><td>5</td><td><code class="ic">ModelPath</code> → 目录</td><td>必须</td></tr>
+</tbody></table>
+
+<h3>导出器生成</h3>
+<p>各模型的 <code class="ic">export_onnx.py</code> 导出脚本会自动生成 <code class="ic">manifest.json</code>，无需手动创建：</p>
+<pre>python export_onnx.py
+# 输出完整的模型包目录：
+# grounded-sam2/
+# ├── manifest.json
+# ├── *.onnx
+# └── ...</pre>
 
 <h2 id="ort-package" class="sa">ort 底层绑定</h2>
 <p><code class="ic">ort</code> 包是 ONNX Runtime C API 的 Go 绑定层，使用 purego 实现零 CGO 调用。</p>
@@ -371,7 +460,7 @@ session, err := oc.OnnxEngine.NewSession("model.onnx", oc.SessionOptions)</pre>
 <h3 id="yolo26-det" class="sa">目标检测 (DetEngine)</h3>
 <p>检测输出格式：<code class="ic">[N, 300, 6]</code>，每行 <code class="ic">[x1, y1, x2, y2, score, class_id]</code>。</p>
 <pre>cfg := yolo26.DefaultDetConfig()
-cfg.ModelPath = "models/yolo26m.onnx"
+cfg.ModelPath = "models/yolo26/yolo26m.onnx"
 cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 cfg.UseCuda = true
 
@@ -401,7 +490,7 @@ type DetResult struct {
 <h3 id="yolo26-seg" class="sa">实例分割 (SegEngine)</h3>
 <p>分割模型有两个输出：<code class="ic">[1, 300, 38]</code>（检测+Mask系数）和 <code class="ic">[1, 32, 160, 160]</code>（Mask原型）。</p>
 <pre>cfg := yolo26.DefaultSegConfig()
-cfg.ModelPath = "models/yolo26s-seg.onnx"
+cfg.ModelPath = "models/yolo26/yolo26m-seg.onnx"
 cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 
 engine, err := yolo26.NewSegEngine(cfg)
@@ -427,7 +516,7 @@ type SegResult struct {
 <h3 id="yolo26-pose" class="sa">姿态估计 (PoseEngine)</h3>
 <p>姿态模型输出格式：<code class="ic">[N, 300, 57]</code>（6 基础属性 + 17×3 关键点），支持批量推理和通道优先格式自动检测。</p>
 <pre>cfg := yolo26.DefaultPoseConfig()
-cfg.ModelPath = "models/yolo26m-pose.onnx"
+cfg.ModelPath = "models/yolo26/yolo26m-pose.onnx"
 cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 cfg.NumKeyPoints = 17
 
@@ -457,7 +546,7 @@ type KeyPoint struct {
 <h3 id="yolo26-obb" class="sa">旋转目标检测 (OBBEngine)</h3>
 <p>旋转检测输出格式：<code class="ic">[1, 300, 7]</code>，每行 <code class="ic">[cx, cy, w, h, score, class_id, angle]</code>。</p>
 <pre>cfg := yolo26.DefaultOBBConfig()
-cfg.ModelPath = "models/yolo26m-obb.onnx"
+cfg.ModelPath = "models/yolo26/yolo26m-obb.onnx"
 cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 cfg.InputSize = 1024
 cfg.NumClasses = 15
@@ -485,7 +574,7 @@ type OBBResult struct {
 <h3 id="yolo26-cls" class="sa">图像分类 (ClsEngine)</h3>
 <p>分类模型输入尺寸为 224×224，输出 <code class="ic">[1, 1000]</code> 的 logits。</p>
 <pre>cfg := yolo26.DefaultClsConfig()
-cfg.ModelPath = "models/yolo26m-cls.onnx"
+cfg.ModelPath = "models/yolo26/yolo26-cls.onnx"
 cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 
 engine, err := yolo26.NewClsEngine(cfg)
@@ -518,7 +607,7 @@ type ClassResult struct {
 <pre>import "github.com/DavidSche/raven-onnxruntime/vision/yolov11"
 
 cfg := yolov11.DefaultDetConfig()
-cfg.ModelPath = "models/yolo11m.onnx"
+cfg.ModelPath = "models/yolo11/yolo11m.onnx"
 cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 
 engine, err := yolov11.NewDetEngine(cfg)
@@ -541,8 +630,7 @@ results, err := engine.Predict(img)</pre>
 
 <pre>config := sam2.Config{
     OnnxRuntimeLibPath: "./lib/onnxruntime.dll",
-    EncodeModelPath:    "models/sam2/vision_encoder.onnx",
-    DecodeModelPath:    "models/sam2/prompt_encoder_mask_decoder.onnx",
+    ModelPath:          "models/sam2",  // 目录内包含 manifest.json + ONNX 子模型
 }
 
 engine, err := sam2.NewEngine(config)
@@ -583,9 +671,7 @@ result, err := imgCtx.DecodeRaw(points)
 
 <pre>config := sam3.Config{
     OnnxRuntimeLibPath: "./lib/onnxruntime.dll",
-    VisionModelPath:    "models/sam3_vision_encoder.onnx",
-    TextModelPath:      "models/sam3_text_encoder.onnx",
-    DecoderModelPath:   "models/sam3_decoder.onnx",
+    ModelPath:          "models/sam3",  // 目录内包含 manifest.json + ONNX 子模型
 }
 
 engine, err := sam3.NewEngine(config)
@@ -622,6 +708,68 @@ maskImg, score, err := imgCtx.Decode(points)</pre>
 <tr><td><code class="ic">LabelForeground</code></td><td>1</td><td>前景/包含</td></tr>
 <tr><td><code class="ic">LabelNegBox</code></td><td>0</td><td>负框（排除区域）</td></tr>
 <tr><td><code class="ic">LabelPosBox</code></td><td>1</td><td>正框（包含区域）</td></tr>
+</tbody></table>
+
+<h2 id="depth_anything3" class="sa">Depth-Anything-3</h2>
+<p>Depth-Anything-3 是 Depth-Anything 系列的单目深度估计模型，支持多种模型变体（Small/Base/Large/Giant）。从单张 RGB 图像预测密集深度图和置信度图。包路径：<code class="ic">github.com/DavidSche/raven-onnxruntime/vision/depth_anything3</code></p>
+
+<h3>Config 配置</h3>
+<pre>type Config struct {
+    ModelPath          string // ONNX 模型路径
+    OnnxRuntimeLibPath string // ONNX Runtime 共享库路径
+    InputHeight        int    // 输入高度（必须为14的倍数，默认518）
+    InputWidth         int    // 输入宽度（必须为14的倍数，默认518）
+    UseCuda            bool   // 启用 CUDA
+    NumThreads         int    // ONNX 线程数
+    EnableCpuMemArena bool   // 启用 ONNX 内存池
+    ApiVersion         ort.ApiVersion
+}</pre>
+
+<h3>使用示例</h3>
+<pre>cfg := depth_anything3.DefaultConfig()
+cfg.ModelPath = "models/da3-small/da3-small_518x518.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := depth_anything3.NewEngine(cfg)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("test.png")
+result, err := engine.Predict(img)
+
+// result.Depth — 深度图 []float32 (H×W)，值越大表示距离越近
+// result.Confidence — 置信度图 []float32 (H×W)
+// result.Width, result.Height — 深度图尺寸
+
+// 可视化
+colorImg := depth_anything3.DepthToColormap(result)        // 伪彩色（turbo）
+heatmapImg := depth_anything3.DepthToHeatmap(result)        // 热力图（蓝→红）
+overlayImg := depth_anything3.DrawDepthOverlay(img, result, 0.5) // 叠加到原图
+confImg := depth_anything3.DrawDepthWithConfidence(result, 0.3)  // 置信度过滤</pre>
+
+<h3>模型变体</h3>
+<table>
+<thead><tr><th>变体</th><th>配置名</th><th>骨干网络</th><th>默认输入</th></tr></thead>
+<tbody>
+<tr><td>DA3-SMALL</td><td><code class="ic">da3-small</code></td><td>DinoV2-S/14</td><td>518×518</td></tr>
+<tr><td>DA3-BASE</td><td><code class="ic">da3-base</code></td><td>DinoV2-B/14</td><td>518×518</td></tr>
+<tr><td>DA3-LARGE</td><td><code class="ic">da3-large</code></td><td>DinoV2-L/14</td><td>518×518</td></tr>
+<tr><td>DA3-GIANT</td><td><code class="ic">da3-giant</code></td><td>DinoV2-G/14</td><td>518×518</td></tr>
+</tbody></table>
+
+<h3>预处理</h3>
+<ul>
+<li><strong>归一化</strong>：ImageNet mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]</li>
+<li><strong>缩放</strong>：按长边 upper-bound resize，尺寸对齐到14的倍数</li>
+<li><strong>输入格式</strong>：(B, 1, 3, H, W) — 单帧单目输入</li>
+</ul>
+
+<h3>输出</h3>
+<table>
+<thead><tr><th>输出名称</th><th>形状</th><th>描述</th></tr></thead>
+<tbody>
+<tr><td><code class="ic">depth</code></td><td>(B, 1, H, W)</td><td>预测深度图（相对深度，值越大越近）</td></tr>
+<tr><td><code class="ic">depth_conf</code></td><td>(B, 1, H, W)</td><td>深度置信度图</td></tr>
 </tbody></table>
 
 <h2 id="rfdetr" class="sa">RF-DETR</h2>
@@ -711,7 +859,7 @@ type SegResult struct {
 
 <h3>目标检测 (DetEngine)</h3>
 <pre>cfg := ltdetr.DefaultDetConfig()
-cfg.ModelPath = "models/ltdetr/dinov3_vits16_ltdetr_coco.onnx"
+cfg.ModelPath = "models/ltdetr/dinov3_vits16-ltdetr-coco.onnx"
 cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 
 engine, err := ltdetr.NewDetEngine(cfg)
@@ -756,7 +904,7 @@ type DetResult struct {
 
 <h3 id="edgecrafter-det" class="sa">目标检测 (DetEngine)</h3>
 <pre>cfg := edgecrafter.DefaultDetConfig()
-cfg.ModelPath = "models/edgecrafter/ecdet-s.onnx"
+cfg.ModelPath = "models/ecdet/ecdet_s.onnx"
 cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 
 engine, err := edgecrafter.NewDetEngine(cfg)
@@ -777,7 +925,7 @@ type DetResult struct {
 
 <h3 id="edgecrafter-seg" class="sa">实例分割 (SegEngine)</h3>
 <pre>cfg := edgecrafter.DefaultSegConfig()
-cfg.ModelPath = "models/edgecrafter/ecseg-s.onnx"
+cfg.ModelPath = "models/ecdet/ecseg_s.onnx"
 cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 
 engine, err := edgecrafter.NewSegEngine(cfg)
@@ -801,7 +949,7 @@ type SegResult struct {
 
 <h3 id="edgecrafter-pose" class="sa">姿态估计 (PoseEngine)</h3>
 <pre>cfg := edgecrafter.DefaultPoseConfig()
-cfg.ModelPath = "models/edgecrafter/ecpose-s.onnx"
+cfg.ModelPath = "models/ecdet/ecpose_s.onnx"
 cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 
 engine, err := edgecrafter.NewPoseEngine(cfg)
@@ -842,6 +990,7 @@ type KeyPoint struct {
 <tr><td>YOLO26</td><td>分割 / OBB / 分类</td><td>—</td><td>仅支持单帧 Predict</td></tr>
 <tr><td>YOLOv11</td><td>全部</td><td>—</td><td>仅支持单帧 Predict</td></tr>
 <tr><td>SAM2 / SAM3</td><td>分割</td><td>—</td><td>编码器-解码器架构，不适合批量</td></tr>
+<tr><td>Depth-Anything-3</td><td>深度估计</td><td>—</td><td>单帧单目深度估计</td></tr>
 </tbody></table>
 
 <h3>使用示例</h3>
@@ -864,7 +1013,7 @@ batchResults, err := rfdetrEngine.PredictBatch(imgs)</pre>
 <p>可以将检测模型与分割模型组合，实现"先检测再分割"的流水线。典型场景：YOLO 检测目标 → SAM 精确分割。</p>
 
 <pre>yoloCfg := yolo26.DefaultDetConfig()
-yoloCfg.ModelPath = "models/yolo26m.onnx"
+yoloCfg.ModelPath = "models/yolo26/yolo26m.onnx"
 yoloCfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 
 yoloEngine, err := yolo26.NewDetEngine(yoloCfg)
@@ -884,9 +1033,7 @@ for _, res := range yoloResults {
 
 samCfg := sam3.Config{
     OnnxRuntimeLibPath: "./lib/onnxruntime.dll",
-    VisionModelPath:    "models/sam3_vision_encoder.onnx",
-    TextModelPath:      "models/sam3_text_encoder.onnx",
-    DecoderModelPath:   "models/sam3_decoder.onnx",
+    ModelPath:          "models/sam3",  // 目录内包含 manifest.json + ONNX 子模型
 }
 
 samEngine, err := sam3.NewEngine(samCfg)
@@ -1069,6 +1216,7 @@ cfg.ApiVersion = ort.ApiVersion23</pre>
 <tr><td>YOLOv11</td><td>vision/yolov11</td><td>ClsEngine</td><td>图像分类</td><td>❌</td></tr>
 <tr><td>SAM2</td><td>vision/sam2</td><td>Engine</td><td>图像分割</td><td>❌</td></tr>
 <tr><td>SAM3</td><td>vision/sam3</td><td>Engine</td><td>图像分割</td><td>❌</td></tr>
+<tr><td>Depth-Anything-3</td><td>vision/depth_anything3</td><td>Engine</td><td>深度估计</td><td>❌</td></tr>
 <tr><td>RF-DETR</td><td>vision/rfdetr</td><td>DetEngine</td><td>目标检测</td><td>✅</td></tr>
 <tr><td>RF-DETR</td><td>vision/rfdetr</td><td>SegEngine</td><td>实例分割</td><td>✅</td></tr>
 <tr><td>LTDETR</td><td>vision/ltdetr</td><td>DetEngine</td><td>目标检测</td><td>✅</td></tr>

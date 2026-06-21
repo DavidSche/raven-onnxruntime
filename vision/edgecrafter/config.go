@@ -3,6 +3,7 @@ package edgecrafter
 import (
 	"image"
 
+	"github.com/DavidSche/raven-onnxruntime/internal/modelpath"
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
 )
 
@@ -48,21 +49,21 @@ func DefaultConfig() Config {
 // DefaultDetConfig returns default detection configuration.
 func DefaultDetConfig() Config {
 	cfg := DefaultConfig()
-	cfg.ModelPath = "./models/edgecrafter/ecdet-s.onnx"
+	cfg.ModelPath = modelpath.ModelPath("ecdet", "ecdet_s.onnx")
 	return cfg
 }
 
 // DefaultSegConfig returns default segmentation configuration.
 func DefaultSegConfig() Config {
 	cfg := DefaultConfig()
-	cfg.ModelPath = "./models/edgecrafter/ecseg-s.onnx"
+	cfg.ModelPath = modelpath.ModelPath("ecdet", "ecseg_s.onnx")
 	return cfg
 }
 
 // DefaultPoseConfig returns default pose configuration.
 func DefaultPoseConfig() Config {
 	cfg := DefaultConfig()
-	cfg.ModelPath = "./models/edgecrafter/ecpose-s.onnx"
+	cfg.ModelPath = modelpath.ModelPath("ecdet", "ecpose_s.onnx")
 	cfg.NumClasses = 2
 	return cfg
 }

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,7 +33,7 @@ func DefaultBenchConfig() BenchConfig {
 		WarmupRuns: 3,
 		BenchRuns:  30,
 		UseCuda:    false,
-		LibPath:    "../lib/onnxruntime.dll",
+		LibPath:    ExampleORTLibraryPath(),
 	}
 }
 
@@ -42,21 +43,41 @@ func DefaultBenchConfig() BenchConfig {
 func RunImageBench(engine BenchEngine, img image.Image, cfg BenchConfig) BenchSummary {
 	// Warmup
 	for i := 0; i < cfg.WarmupRuns; i++ {
-		engine.Predict(img)
+		_, _ = engine.Predict(img)
 	}
 
 	latencies := make([]time.Duration, 0, cfg.BenchRuns)
 	detCounts := make([]int, 0, cfg.BenchRuns)
+	errorCount := 0
+
+	// Track peak memory
+	var peakMemMB float64
+	var memStats runtime.MemStats
+	runtime.GC()
 
 	for i := 0; i < cfg.BenchRuns; i++ {
 		start := time.Now()
-		n, _ := engine.Predict(img)
+		n, err := engine.Predict(img)
 		elapsed := time.Since(start)
 		latencies = append(latencies, elapsed)
 		detCounts = append(detCounts, n)
+		if err != nil {
+			errorCount++
+		}
+
+		// Sample memory every 10 iterations
+		if i%10 == 0 {
+			runtime.ReadMemStats(&memStats)
+			allocMB := float64(memStats.Alloc) / 1024 / 1024
+			if allocMB > peakMemMB {
+				peakMemMB = allocMB
+			}
+		}
 	}
 
-	return ComputeSummary(engine.Name(), engine.Task(), latencies, detCounts)
+	summary := ComputeSummary(engine.Name(), engine.Task(), latencies, detCounts, errorCount)
+	summary.PeakMemoryMB = peakMemMB
+	return summary
 }
 
 // RunImageBenchMulti benchmarks multiple engines against one image.
@@ -82,6 +103,7 @@ func RunImageDirBench(engines []BenchEngine, dir string, cfg BenchConfig) ([]Ben
 	// Collect all latencies per engine across all images
 	engineLatencies := make([][]time.Duration, len(engines))
 	engineDetCounts := make([][]int, len(engines))
+	engineErrors := make([]int, len(engines))
 
 	for _, imgPath := range imagePaths {
 		img, err := imageutil.Open(imgPath)
@@ -92,21 +114,24 @@ func RunImageDirBench(engines []BenchEngine, dir string, cfg BenchConfig) ([]Ben
 		for i, e := range engines {
 			// Warmup per image
 			for w := 0; w < cfg.WarmupRuns; w++ {
-				e.Predict(img)
+				_, _ = e.Predict(img)
 			}
 
 			for r := 0; r < cfg.BenchRuns; r++ {
 				start := time.Now()
-				n, _ := e.Predict(img)
+				n, err := e.Predict(img)
 				engineLatencies[i] = append(engineLatencies[i], time.Since(start))
 				engineDetCounts[i] = append(engineDetCounts[i], n)
+				if err != nil {
+					engineErrors[i]++
+				}
 			}
 		}
 	}
 
 	summaries := make([]BenchSummary, 0, len(engines))
 	for i, e := range engines {
-		s := ComputeSummary(e.Name(), e.Task(), engineLatencies[i], engineDetCounts[i])
+		s := ComputeSummary(e.Name(), e.Task(), engineLatencies[i], engineDetCounts[i], engineErrors[i])
 		summaries = append(summaries, s)
 	}
 	return summaries, nil
@@ -122,21 +147,25 @@ func RunBatchBench(engine BenchEngine, imgs []image.Image, cfg BenchConfig) Benc
 
 	// Warmup
 	for i := 0; i < cfg.WarmupRuns; i++ {
-		engine.PredictBatch(imgs)
+		_, _ = engine.PredictBatch(imgs)
 	}
 
 	latencies := make([]time.Duration, 0, cfg.BenchRuns)
 	detCounts := make([]int, 0, cfg.BenchRuns)
+	errorCount := 0
 
 	for i := 0; i < cfg.BenchRuns; i++ {
 		start := time.Now()
-		n, _ := engine.PredictBatch(imgs)
+		n, err := engine.PredictBatch(imgs)
 		elapsed := time.Since(start)
 		latencies = append(latencies, elapsed)
 		detCounts = append(detCounts, n)
+		if err != nil {
+			errorCount++
+		}
 	}
 
-	s := ComputeSummary(engine.Name(), engine.Task(), latencies, detCounts)
+	s := ComputeSummary(engine.Name(), engine.Task(), latencies, detCounts, errorCount)
 	return s
 }
 
@@ -277,6 +306,7 @@ func RunVideoBench(t *testing.T, engines []BenchEngine, videoPath string, sample
 
 	engineLatencies := make([][]time.Duration, len(engines))
 	engineDetCounts := make([][]int, len(engines))
+	engineErrors := make([]int, len(engines))
 
 	for _, framePath := range frames {
 		img, err := imageutil.Open(framePath)
@@ -288,7 +318,7 @@ func RunVideoBench(t *testing.T, engines []BenchEngine, videoPath string, sample
 			start := time.Now()
 			n, err := e.Predict(img)
 			if err != nil {
-				t.Fatalf("engine %s prediction failed: %v", e.Name(), err)
+				engineErrors[i]++
 			}
 			engineLatencies[i] = append(engineLatencies[i], time.Since(start))
 			engineDetCounts[i] = append(engineDetCounts[i], n)
@@ -297,7 +327,7 @@ func RunVideoBench(t *testing.T, engines []BenchEngine, videoPath string, sample
 
 	summaries := make([]BenchSummary, 0, len(engines))
 	for i, e := range engines {
-		s := ComputeSummary(e.Name(), e.Task(), engineLatencies[i], engineDetCounts[i])
+		s := ComputeSummary(e.Name(), e.Task(), engineLatencies[i], engineDetCounts[i], engineErrors[i])
 		summaries = append(summaries, s)
 	}
 	return summaries
@@ -333,6 +363,7 @@ func RunVideoStreamBench(t *testing.T, engines []BenchEngine, videoPath string, 
 
 	engineLatencies := make([][]time.Duration, len(engines))
 	engineDetCounts := make([][]int, len(engines))
+	engineErrors := make([]int, len(engines))
 
 	buf := make([]byte, 0, 2*1024*1024)
 	soi := []byte{0xFF, 0xD8}
@@ -378,16 +409,19 @@ func RunVideoStreamBench(t *testing.T, engines []BenchEngine, videoPath string, 
 
 			for i, e := range engines {
 				start := time.Now()
-				n, _ := e.Predict(img)
+				n, err := e.Predict(img)
 				engineLatencies[i] = append(engineLatencies[i], time.Since(start))
 				engineDetCounts[i] = append(engineDetCounts[i], n)
+				if err != nil {
+					engineErrors[i]++
+				}
 			}
 		}
 	}
 
 	summaries := make([]BenchSummary, 0, len(engines))
 	for i, e := range engines {
-		s := ComputeSummary(e.Name(), e.Task(), engineLatencies[i], engineDetCounts[i])
+		s := ComputeSummary(e.Name(), e.Task(), engineLatencies[i], engineDetCounts[i], engineErrors[i])
 		summaries = append(summaries, s)
 	}
 	return summaries
@@ -415,4 +449,66 @@ func loadImagesFromDir(dir string) ([]string, error) {
 		}
 	}
 	return files, nil
+}
+
+// --- Batch Size Sweep ---
+
+// RunBatchSweepBench benchmarks engines across multiple batch sizes,
+// printing throughput-vs-latency results for each engine × batch size combination.
+func RunBatchSweepBench(engines []BenchEngine, baseImgs []image.Image, batchSizes []int, cfg BenchConfig) {
+	for _, e := range engines {
+		if !e.SupportsBatch() {
+			fmt.Printf("\n%s: batch not supported, skipping sweep\n", e.Name())
+			continue
+		}
+
+		fmt.Printf("\n%s batch size sweep:\n", e.Name())
+		fmt.Printf("  %-10s | %10s | %12s | %15s\n", "BatchSize", "Avg(ms)", "FPS", "Throughput(img/s)")
+		fmt.Println("  " + strings.Repeat("-", 55))
+
+		for _, bs := range batchSizes {
+			// Build batch by repeating base images to fill batch size
+			imgs := make([]image.Image, bs)
+			for i := range imgs {
+				imgs[i] = baseImgs[i%len(baseImgs)]
+			}
+
+			// Warmup
+			for i := 0; i < cfg.WarmupRuns; i++ {
+				_, _ = e.PredictBatch(imgs)
+			}
+
+			latencies := make([]time.Duration, 0, cfg.BenchRuns)
+			for i := 0; i < cfg.BenchRuns; i++ {
+				start := time.Now()
+				_, _ = e.PredictBatch(imgs)
+				latencies = append(latencies, time.Since(start))
+			}
+
+			summary := ComputeSummary(e.Name(), e.Task(), latencies, nil, 0)
+			throughput := float64(bs) * summary.FPS
+			fmt.Printf("  %-10d | %10.2f | %12.1f | %15.1f\n",
+				bs,
+				float64(summary.AvgMs)/float64(time.Millisecond),
+				summary.FPS,
+				throughput,
+			)
+		}
+	}
+	fmt.Println()
+}
+
+// --- Accuracy Validation ---
+
+// ValidateEngine runs a single inference and checks that the detection count
+// is within a reasonable range. Returns nil if validation passes.
+func ValidateEngine(engine BenchEngine, img image.Image, minDets, maxDets int) error {
+	n, err := engine.Predict(img)
+	if err != nil {
+		return fmt.Errorf("inference error: %w", err)
+	}
+	if n < minDets || n > maxDets {
+		return fmt.Errorf("detection count %d outside expected range [%d, %d]", n, minDets, maxDets)
+	}
+	return nil
 }

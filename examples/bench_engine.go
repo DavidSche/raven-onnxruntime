@@ -3,6 +3,7 @@ package examples
 import (
 	"fmt"
 	"image"
+	"math"
 	"sort"
 	"time"
 
@@ -669,6 +670,7 @@ type BenchSummary struct {
 	Task        string
 	TotalFrames int
 	TotalDets   int
+	ErrorCount  int
 	TotalMs     time.Duration
 	AvgMs       time.Duration
 	MinMs       time.Duration
@@ -676,15 +678,25 @@ type BenchSummary struct {
 	P50Ms       time.Duration
 	P95Ms       time.Duration
 	P99Ms       time.Duration
+	StdDevMs    time.Duration // standard deviation of latencies
+	CV          float64       // coefficient of variation (StdDev/Avg), measures stability
 	FPS         float64
 	Latencies   []time.Duration
+
+	// Segmented timing (optional, populated when engine supports it)
+	PreprocessMs  time.Duration // average preprocessing time
+	InferenceMs   time.Duration // average pure inference time
+	PostprocessMs time.Duration // average postprocessing time
+
+	// Memory (optional, populated when monitoring is enabled)
+	PeakMemoryMB float64 // peak Go runtime memory in MB
 }
 
 // ComputeSummary computes a BenchSummary from per-frame latencies and detection counts.
-func ComputeSummary(engineName, task string, latencies []time.Duration, detCounts []int) BenchSummary {
+func ComputeSummary(engineName, task string, latencies []time.Duration, detCounts []int, errorCount int) BenchSummary {
 	n := len(latencies)
 	if n == 0 {
-		return BenchSummary{EngineName: engineName, Task: task}
+		return BenchSummary{EngineName: engineName, Task: task, ErrorCount: errorCount}
 	}
 
 	sorted := make([]time.Duration, n)
@@ -702,11 +714,28 @@ func ComputeSummary(engineName, task string, latencies []time.Duration, detCount
 
 	avgMs := totalMs / time.Duration(n)
 
+	// Compute standard deviation and coefficient of variation
+	stdDevMs := time.Duration(0)
+	cv := 0.0
+	if n > 1 {
+		stdDevFloat := 0.0
+		for _, lat := range latencies {
+			diff := float64(lat-avgMs) / float64(time.Millisecond)
+			stdDevFloat += diff * diff
+		}
+		stdDevFloat = math.Sqrt(stdDevFloat / float64(n))
+		stdDevMs = time.Duration(stdDevFloat * float64(time.Millisecond))
+		if avgMs > 0 {
+			cv = stdDevFloat / (float64(avgMs) / float64(time.Millisecond))
+		}
+	}
+
 	return BenchSummary{
 		EngineName:  engineName,
 		Task:        task,
 		TotalFrames: n,
 		TotalDets:   totalDets,
+		ErrorCount:  errorCount,
 		TotalMs:     totalMs,
 		AvgMs:       avgMs,
 		MinMs:       sorted[0],
@@ -714,6 +743,8 @@ func ComputeSummary(engineName, task string, latencies []time.Duration, detCount
 		P50Ms:       percentile(sorted, 50),
 		P95Ms:       percentile(sorted, 95),
 		P99Ms:       percentile(sorted, 99),
+		StdDevMs:    stdDevMs,
+		CV:          cv,
 		FPS:         1.0 / avgMs.Seconds(),
 		Latencies:   sorted,
 	}

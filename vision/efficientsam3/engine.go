@@ -1,4 +1,4 @@
-package sam3
+package efficientsam3
 
 import (
 	"fmt"
@@ -110,27 +110,10 @@ func (e *Engine) EncodeImage(img image.Image) (*ImageContext, error) {
 	defer inputTensor.Destroy()
 
 	visOutputs, err := e.visionSession.Run(map[string]*ort.Value{
-		"images": inputTensor,
+		"image": inputTensor,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("vision encoder inference failed: %w", err)
-	}
-
-	for name, val := range visOutputs {
-		shape, _ := val.GetShape()
-		data, err := ort.GetTensorData[float32](val)
-		if err == nil && len(data) > 0 {
-			vmin, vmax := data[0], data[0]
-			for _, v := range data {
-				if v < vmin {
-					vmin = v
-				}
-				if v > vmax {
-					vmax = v
-				}
-			}
-			fmt.Printf("[SAM3 VIS] %s shape=%v range=[%.4f,%.4f]\n", name, shape, vmin, vmax)
-		}
 	}
 
 	textFeatures, textMask, err := e.encodeDummyText()
@@ -187,10 +170,6 @@ func (e *Engine) encodeDummyText() (*ort.Value, *ort.Value, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("text encoder run failed: %w", err)
 	}
-
-	textFeatShape, _ := outputs["text_features"].GetShape()
-	textMaskShape, _ := outputs["text_mask"].GetShape()
-	fmt.Printf("[SAM3 TEXT] features shape=%v mask shape=%v\n", textFeatShape, textMaskShape)
 
 	return outputs["text_features"], outputs["text_mask"], nil
 }

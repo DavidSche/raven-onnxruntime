@@ -13,8 +13,8 @@ import (
 
 func TestYOLOv11Det(t *testing.T) {
 	cfg := yolov11.DefaultDetConfig()
-	cfg.ModelPath = "../models/yolo11m.onnx"
-	cfg.OnnxRuntimeLibPath = "../lib/onnxruntime.dll"
+	cfg.ModelPath = ExampleModelPath("yolo11", "yolo11m.onnx")
+	cfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 
 	engine, err := yolov11.NewDetEngine(cfg)
 	if err != nil {
@@ -22,7 +22,7 @@ func TestYOLOv11Det(t *testing.T) {
 	}
 	defer engine.Destroy()
 
-	img, _ := imageutil.Open("./test.png")
+	img := mustOpenExampleImage(t, "test.png")
 	results, err := engine.Predict(img)
 	if err != nil {
 		t.Fatalf("prediction failed: %v", err)
@@ -35,13 +35,15 @@ func TestYOLOv11Det(t *testing.T) {
 		fmt.Printf("Class: %d, Score: %.2f, Box: %v\n", res.ClassID, res.Score, res.Box)
 		imageutil.DrawThickRectOutline(targetImg, res.Box, color.RGBA{R: 255, G: 0, B: 0, A: 255}, 3)
 	}
-	imageutil.Save("yolov11_det.jpg", targetImg, 50)
+	if err := imageutil.Save(exampleArtifactPath("yolov11_det.jpg"), targetImg, 50); err != nil {
+		t.Fatalf("failed to save image: %v", err)
+	}
 }
 
 func TestYOLOv11Seg(t *testing.T) {
 	cfg := yolov11.DefaultSegConfig()
-	cfg.ModelPath = "../models/yolo11m-seg.onnx"
-	cfg.OnnxRuntimeLibPath = "../lib/onnxruntime.dll"
+	cfg.ModelPath = ExampleModelPath("yolo11", "yolo11m-seg.onnx")
+	cfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 
 	engine, err := yolov11.NewSegEngine(cfg)
 	if err != nil {
@@ -49,7 +51,7 @@ func TestYOLOv11Seg(t *testing.T) {
 	}
 	defer engine.Destroy()
 
-	img, _ := imageutil.Open("./test.png")
+	img := mustOpenExampleImage(t, "test.png")
 	results, err := engine.Predict(img)
 	if err != nil {
 		t.Fatalf("prediction failed: %v", err)
@@ -58,14 +60,16 @@ func TestYOLOv11Seg(t *testing.T) {
 	fmt.Printf("detected objects: %d\n", len(results))
 	for idx, res := range results {
 		fmt.Printf("Class: %d, Score: %.2f, Box: %v\n", res.ClassID, res.Score, res.Box)
-		imageutil.Save(fmt.Sprintf("yolov11_seg_mask_%d.png", idx), res.Mask, 100)
+		if err := imageutil.Save(exampleArtifactPath(fmt.Sprintf("yolov11_seg_mask_%d.png", idx)), res.Mask, 100); err != nil {
+			t.Fatalf("failed to save mask: %v", err)
+		}
 	}
 }
 
 func TestYOLOv11Cls(t *testing.T) {
 	cfg := yolov11.DefaultClsConfig()
-	cfg.ModelPath = "../models/yolo11m-cls.onnx"
-	cfg.OnnxRuntimeLibPath = "../lib/onnxruntime.dll"
+	cfg.ModelPath = ExampleModelPath("yolo11", "yolo11m-cls.onnx")
+	cfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 
 	engine, err := yolov11.NewClsEngine(cfg)
 	if err != nil {
@@ -73,7 +77,7 @@ func TestYOLOv11Cls(t *testing.T) {
 	}
 	defer engine.Destroy()
 
-	img, _ := imageutil.Open("./test.png")
+	img := mustOpenExampleImage(t, "test.png")
 	results, err := engine.Predict(img, 5)
 	if err != nil {
 		t.Fatalf("prediction failed: %v", err)
@@ -86,8 +90,8 @@ func TestYOLOv11Cls(t *testing.T) {
 
 func TestYOLOv11Pose(t *testing.T) {
 	cfg := yolov11.DefaultPoseConfig()
-	cfg.ModelPath = "../models/yolo11m-pose.onnx"
-	cfg.OnnxRuntimeLibPath = "../lib/onnxruntime.dll"
+	cfg.ModelPath = ExampleModelPath("yolo11", "yolo11m-pose.onnx")
+	cfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 
 	engine, err := yolov11.NewPoseEngine(cfg)
 	if err != nil {
@@ -95,20 +99,22 @@ func TestYOLOv11Pose(t *testing.T) {
 	}
 	defer engine.Destroy()
 
-	img, _ := imageutil.Open("./person.jpg")
+	img := mustOpenExampleImage(t, "person.jpg")
 	results, err := engine.Predict(img)
 	if err != nil {
 		t.Fatalf("prediction failed: %v", err)
 	}
 
 	dst := yolov11.DrawPoseResult(img, results)
-	imageutil.Save("yolov11_pose.jpg", dst, 50)
+	if err := imageutil.Save(exampleArtifactPath("yolov11_pose.jpg"), dst, 50); err != nil {
+		t.Fatalf("failed to save image: %v", err)
+	}
 }
 
 func TestYOLOv11OBB(t *testing.T) {
 	cfg := yolov11.DefaultOBBConfig()
-	cfg.ModelPath = "../models/yolo11m-obb.onnx"
-	cfg.OnnxRuntimeLibPath = "../lib/onnxruntime.dll"
+	cfg.ModelPath = ExampleModelPath("yolo11", "yolo11m-obb.onnx")
+	cfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 
 	engine, err := yolov11.NewOBBEngine(cfg)
 	if err != nil {
@@ -116,7 +122,7 @@ func TestYOLOv11OBB(t *testing.T) {
 	}
 	defer engine.Destroy()
 
-	img, _ := imageutil.Open("./ship.jpg")
+	img := mustOpenExampleImage(t, "ship.jpg")
 	results, err := engine.Predict(img)
 	if err != nil {
 		t.Fatalf("prediction failed: %v", err)
@@ -127,5 +133,7 @@ func TestYOLOv11OBB(t *testing.T) {
 	for _, result := range results {
 		imageutil.DrawThickPolygonOutline(dst, result.Corners[:], 3, color.RGBA{R: 255, G: 0, B: 0, A: 255})
 	}
-	imageutil.Save("yolov11_obb.jpg", dst, 50)
+	if err := imageutil.Save(exampleArtifactPath("yolov11_obb.jpg"), dst, 50); err != nil {
+		t.Fatalf("failed to save image: %v", err)
+	}
 }

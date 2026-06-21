@@ -159,8 +159,8 @@ func TestCompareYOLO26VsRFDETRVideo(t *testing.T) {
 	t.Logf("Video info: %dx%d @ %.1ffps", width, height, fps)
 
 	yoloCfg := yolo26.DefaultDetConfig()
-	yoloCfg.ModelPath = "../../models/yolo26s.onnx"
-	yoloCfg.OnnxRuntimeLibPath = "../../lib/onnxruntime.dll"
+	yoloCfg.ModelPath = ExampleModelPath("yolo26", "yolo26s.onnx")
+	yoloCfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 	yoloCfg.UseCuda = true
 
 	yoloEngine, err := yolo26.NewDetEngine(yoloCfg)
@@ -170,8 +170,8 @@ func TestCompareYOLO26VsRFDETRVideo(t *testing.T) {
 	defer yoloEngine.Destroy()
 
 	rfdetrCfg := rfdetr.DefaultDetConfig()
-	rfdetrCfg.ModelPath = "../../models/rf-detr/rf-detr-small.onnx"
-	rfdetrCfg.OnnxRuntimeLibPath = "../../lib/onnxruntime.dll"
+	rfdetrCfg.ModelPath = ExampleModelPath("rf-detr", "rf-detr-small.onnx")
+	rfdetrCfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 	rfdetrCfg.UseCuda = true
 
 	rfdetrEngine, err := rfdetr.NewDetEngine(rfdetrCfg)
@@ -255,7 +255,7 @@ func TestCompareYOLO26VsRFDETRVideo(t *testing.T) {
 	}
 
 	videoBaseName := strings.TrimSuffix(filepath.Base(videoPath), filepath.Ext(videoPath))
-	outputVideoPath := fmt.Sprintf("compare_%s.mp4", videoBaseName)
+	outputVideoPath := exampleArtifactPath("video", fmt.Sprintf("compare_%s.mp4", videoBaseName))
 
 	actualFPS := sampleFPS
 	if actualFPS <= 0 {
@@ -323,8 +323,8 @@ func TestCompareYOLO26VsRFDETRVideoStream(t *testing.T) {
 	}
 
 	yoloCfg := yolo26.DefaultDetConfig()
-	yoloCfg.ModelPath = "../../models/yolo26s.onnx"
-	yoloCfg.OnnxRuntimeLibPath = "../../lib/onnxruntime.dll"
+	yoloCfg.ModelPath = ExampleModelPath("yolo26", "yolo26s.onnx")
+	yoloCfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 	yoloCfg.UseCuda = true
 
 	yoloEngine, err := yolo26.NewDetEngine(yoloCfg)
@@ -334,8 +334,8 @@ func TestCompareYOLO26VsRFDETRVideoStream(t *testing.T) {
 	defer yoloEngine.Destroy()
 
 	rfdetrCfg := rfdetr.DefaultDetConfig()
-	rfdetrCfg.ModelPath = "../../models/rf-detr/rf-detr-small.onnx"
-	rfdetrCfg.OnnxRuntimeLibPath = "../../lib/onnxruntime.dll"
+	rfdetrCfg.ModelPath = ExampleModelPath("rf-detr", "rf-detr-small.onnx")
+	rfdetrCfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 	rfdetrCfg.UseCuda = true
 
 	rfdetrEngine, err := rfdetr.NewDetEngine(rfdetrCfg)
@@ -424,11 +424,17 @@ func TestCompareYOLO26VsRFDETRVideoStream(t *testing.T) {
 			}
 
 			yoloStart := time.Now()
-			yoloResults, _ := yoloEngine.Predict(img)
+			yoloResults, err := yoloEngine.Predict(img)
+			if err != nil {
+				t.Fatalf("YOLO26 prediction failed on stream frame %d: %v", frameIdx, err)
+			}
 			yoloElapsed := time.Since(yoloStart)
 
 			rfdetrStart := time.Now()
-			rfdetrResults, _ := rfdetrEngine.Predict(img)
+			rfdetrResults, err := rfdetrEngine.Predict(img)
+			if err != nil {
+				t.Fatalf("RF-DETR prediction failed on stream frame %d: %v", frameIdx, err)
+			}
 			rfdetrElapsed := time.Since(rfdetrStart)
 
 			totalYoloMs += yoloElapsed
@@ -456,7 +462,7 @@ func TestCompareYOLO26VsRFDETRVideoStream(t *testing.T) {
 	}
 
 	videoBaseName := strings.TrimSuffix(filepath.Base(videoPath), filepath.Ext(videoPath))
-	outputVideoPath := fmt.Sprintf("compare_stream_%s.mp4", videoBaseName)
+	outputVideoPath := exampleArtifactPath("video", fmt.Sprintf("compare_stream_%s.mp4", videoBaseName))
 	encodeVideo(t, annotatedDir, outputVideoPath, 5.0)
 
 	if _, err := os.Stat(outputVideoPath); err == nil {

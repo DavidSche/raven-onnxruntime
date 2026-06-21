@@ -3,6 +3,7 @@ package yolov11
 import (
 	"image"
 
+	"github.com/DavidSche/raven-onnxruntime/internal/modelpath"
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
 )
 
@@ -46,14 +47,14 @@ func DefaultConfig() Config {
 // DefaultDetConfig returns default detection configuration
 func DefaultDetConfig() Config {
 	cfg := DefaultConfig()
-	cfg.ModelPath = "./yolov11_weights/yolo11m.onnx"
+	cfg.ModelPath = modelpath.ModelPath("yolo11", "yolo11m.onnx")
 	return cfg
 }
 
 // DefaultSegConfig returns default segmentation configuration
 func DefaultSegConfig() Config {
 	cfg := DefaultConfig()
-	cfg.ModelPath = "./yolov11_weights/yolo11m-seg.onnx"
+	cfg.ModelPath = modelpath.ModelPath("yolo11", "yolo11m-seg.onnx")
 	return cfg
 }
 
@@ -61,7 +62,7 @@ func DefaultSegConfig() Config {
 func DefaultClsConfig() Config {
 	cfg := DefaultConfig()
 	cfg.InputSize = 224
-	cfg.ModelPath = "./yolov11_weights/yolo11m-cls.onnx"
+	cfg.ModelPath = modelpath.ModelPath("yolo11", "yolo11m-cls.onnx")
 	return cfg
 }
 
@@ -69,7 +70,7 @@ func DefaultClsConfig() Config {
 func DefaultPoseConfig() Config {
 	cfg := DefaultConfig()
 	cfg.NumClasses = 1
-	cfg.ModelPath = "./yolov11_weights/yolo11m-pose.onnx"
+	cfg.ModelPath = modelpath.ModelPath("yolo11", "yolo11m-pose.onnx")
 	return cfg
 }
 
@@ -78,7 +79,7 @@ func DefaultOBBConfig() Config {
 	cfg := DefaultConfig()
 	cfg.InputSize = 1024
 	cfg.NumClasses = 15
-	cfg.ModelPath = "./yolov11_weights/yolo11m-obb.onnx"
+	cfg.ModelPath = modelpath.ModelPath("yolo11", "yolo11m-obb.onnx")
 	return cfg
 }
 

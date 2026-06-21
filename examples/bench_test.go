@@ -5,8 +5,9 @@ import (
 	"image"
 	"os"
 	"testing"
+	"time"
 
-	"github.com/up-zero/gotool/imageutil"
+	"github.com/DavidSche/raven-onnxruntime/vision/depth_anything3"
 )
 
 // createEnginesFromSpecs creates multiple BenchEngines from specs, destroying all on failure.
@@ -15,7 +16,6 @@ func createEnginesFromSpecs(specs []EngineSpec) ([]BenchEngine, error) {
 	for _, spec := range specs {
 		e, err := CreateEngine(spec)
 		if err != nil {
-			// Cleanup already created engines
 			for _, created := range engines {
 				created.Destroy()
 			}
@@ -32,23 +32,24 @@ func destroyEngines(engines []BenchEngine) {
 	}
 }
 
+// useCudaFromEnv returns whether CUDA should be enabled, checking the
+// RAVEN_USE_CUDA environment variable. Returns the explicit value passed
+// as default if the env var is not set.
+func useCudaFromEnv(defaultVal bool) bool {
+	if v := os.Getenv("RAVEN_USE_CUDA"); v != "" {
+		return v == "1" || v == "true" || v == "TRUE"
+	}
+	return defaultVal
+}
+
 // ============================================================
 // Detection Model Comparison Benchmarks
 // ============================================================
 
-// TestBenchDetModels compares all detection models on a single image.
 func TestBenchDetModels(t *testing.T) {
-	img, err := imageutil.Open("./test.png")
-	if err != nil {
-		t.Skip("test.png not found, skipping detection benchmark")
-	}
-
-	specs := []EngineSpec{
-		{Name: "yolo26", Task: "det", ModelPath: "../models/yolo26s.onnx", LibPath: "../lib/onnxruntime.dll"},
-		{Name: "rfdetr", Task: "det", ModelPath: "../models/rf-detr/rf-detr-small.onnx", LibPath: "../lib/onnxruntime.dll"},
-		{Name: "ltdetr", Task: "det", ModelPath: "../models/ltdetr/dinov3_vits16_ltdetr_coco.onnx", LibPath: "../lib/onnxruntime.dll"},
-		{Name: "edgecrafter", Task: "det", ModelPath: "../models/edgecrafter/ecdet-s.onnx", LibPath: "../lib/onnxruntime.dll"},
-	}
+	img := mustOpenExampleImage(t, "test.png")
+	useCuda := useCudaFromEnv(false)
+	specs := DetectionModelSpecs(useCuda)
 
 	engines, err := createEnginesFromSpecs(specs)
 	if err != nil {
@@ -57,29 +58,25 @@ func TestBenchDetModels(t *testing.T) {
 	defer destroyEngines(engines)
 
 	cfg := DefaultBenchConfig()
+	cfg.UseCuda = useCuda
 	summaries := RunImageBenchMulti(engines, img, cfg)
-	PrintBenchSummaryTable("Detection Models Benchmark", summaries)
+	title := "Detection Models Benchmark"
+	if useCuda {
+		title += " (CUDA)"
+	}
+	PrintBenchSummaryTable(title, summaries)
 
-	if err := WriteBenchCSV("bench_det_results.csv", summaries); err != nil {
+	csvPath := exampleArtifactPath("bench_det_results.csv")
+	if err := WriteBenchCSV(csvPath, summaries); err != nil {
 		t.Logf("failed to write CSV: %v", err)
 	} else {
-		t.Log("Results saved to bench_det_results.csv")
+		t.Logf("Results saved to %s", csvPath)
 	}
 }
 
-// TestBenchDetModelsCuda runs detection benchmark with CUDA.
 func TestBenchDetModelsCuda(t *testing.T) {
-	img, err := imageutil.Open("./test.png")
-	if err != nil {
-		t.Skip("test.png not found, skipping CUDA detection benchmark")
-	}
-
-	specs := []EngineSpec{
-		{Name: "yolo26", Task: "det", ModelPath: "../models/yolo26s.onnx", LibPath: "../lib/onnxruntime.dll", UseCuda: true},
-		{Name: "rfdetr", Task: "det", ModelPath: "../models/rf-detr/rf-detr-small.onnx", LibPath: "../lib/onnxruntime.dll", UseCuda: true},
-		{Name: "ltdetr", Task: "det", ModelPath: "../models/ltdetr/dinov3_vits16_ltdetr_coco.onnx", LibPath: "../lib/onnxruntime.dll", UseCuda: true},
-		{Name: "edgecrafter", Task: "det", ModelPath: "../models/edgecrafter/ecdet-s.onnx", LibPath: "../lib/onnxruntime.dll", UseCuda: true},
-	}
+	img := mustOpenExampleImage(t, "test.png")
+	specs := DetectionModelSpecs(true)
 
 	engines, err := createEnginesFromSpecs(specs)
 	if err != nil {
@@ -97,18 +94,10 @@ func TestBenchDetModelsCuda(t *testing.T) {
 // Segmentation Model Comparison Benchmarks
 // ============================================================
 
-// TestBenchSegModels compares all segmentation models on a single image.
 func TestBenchSegModels(t *testing.T) {
-	img, err := imageutil.Open("./test.png")
-	if err != nil {
-		t.Skip("test.png not found, skipping segmentation benchmark")
-	}
-
-	specs := []EngineSpec{
-		{Name: "yolo26", Task: "seg", ModelPath: "../models/yolo26s-seg.onnx", LibPath: "../lib/onnxruntime.dll"},
-		{Name: "rfdetr", Task: "seg", ModelPath: "../models/rf-detr/rf-detr-seg-small.onnx", LibPath: "../lib/onnxruntime.dll"},
-		{Name: "edgecrafter", Task: "seg", ModelPath: "../models/edgecrafter/ecseg-s.onnx", LibPath: "../lib/onnxruntime.dll"},
-	}
+	img := mustOpenExampleImage(t, "test.png")
+	useCuda := useCudaFromEnv(false)
+	specs := SegmentationModelSpecs(useCuda)
 
 	engines, err := createEnginesFromSpecs(specs)
 	if err != nil {
@@ -117,31 +106,46 @@ func TestBenchSegModels(t *testing.T) {
 	defer destroyEngines(engines)
 
 	cfg := DefaultBenchConfig()
+	cfg.UseCuda = useCuda
 	summaries := RunImageBenchMulti(engines, img, cfg)
-	PrintBenchSummaryTable("Segmentation Models Benchmark", summaries)
+	title := "Segmentation Models Benchmark"
+	if useCuda {
+		title += " (CUDA)"
+	}
+	PrintBenchSummaryTable(title, summaries)
 
-	if err := WriteBenchCSV("bench_seg_results.csv", summaries); err != nil {
+	csvPath := exampleArtifactPath("bench_seg_results.csv")
+	if err := WriteBenchCSV(csvPath, summaries); err != nil {
 		t.Logf("failed to write CSV: %v", err)
 	} else {
-		t.Log("Results saved to bench_seg_results.csv")
+		t.Logf("Results saved to %s", csvPath)
 	}
+}
+
+func TestBenchSegModelsCuda(t *testing.T) {
+	img := mustOpenExampleImage(t, "test.png")
+	specs := SegmentationModelSpecs(true)
+
+	engines, err := createEnginesFromSpecs(specs)
+	if err != nil {
+		t.Fatalf("failed to create engines: %v", err)
+	}
+	defer destroyEngines(engines)
+
+	cfg := DefaultBenchConfig()
+	cfg.UseCuda = true
+	summaries := RunImageBenchMulti(engines, img, cfg)
+	PrintBenchSummaryTable("Segmentation Models Benchmark (CUDA)", summaries)
 }
 
 // ============================================================
 // Pose Estimation Model Comparison Benchmarks
 // ============================================================
 
-// TestBenchPoseModels compares all pose estimation models.
 func TestBenchPoseModels(t *testing.T) {
-	img, err := imageutil.Open("./person.jpg")
-	if err != nil {
-		t.Skip("person.jpg not found, skipping pose benchmark")
-	}
-
-	specs := []EngineSpec{
-		{Name: "yolo26", Task: "pose", ModelPath: "../models/yolo26s-pose.onnx", LibPath: "../lib/onnxruntime.dll"},
-		{Name: "edgecrafter", Task: "pose", ModelPath: "../models/edgecrafter/ecpose-s.onnx", LibPath: "../lib/onnxruntime.dll"},
-	}
+	img := mustOpenExampleImage(t, "person.jpg")
+	useCuda := useCudaFromEnv(false)
+	specs := PoseModelSpecs(useCuda)
 
 	engines, err := createEnginesFromSpecs(specs)
 	if err != nil {
@@ -150,30 +154,42 @@ func TestBenchPoseModels(t *testing.T) {
 	defer destroyEngines(engines)
 
 	cfg := DefaultBenchConfig()
+	cfg.UseCuda = useCuda
 	summaries := RunImageBenchMulti(engines, img, cfg)
-	PrintBenchSummaryTable("Pose Estimation Models Benchmark", summaries)
+	title := "Pose Estimation Models Benchmark"
+	if useCuda {
+		title += " (CUDA)"
+	}
+	PrintBenchSummaryTable(title, summaries)
+}
+
+func TestBenchPoseModelsCuda(t *testing.T) {
+	img := mustOpenExampleImage(t, "person.jpg")
+	specs := PoseModelSpecs(true)
+
+	engines, err := createEnginesFromSpecs(specs)
+	if err != nil {
+		t.Fatalf("failed to create engines: %v", err)
+	}
+	defer destroyEngines(engines)
+
+	cfg := DefaultBenchConfig()
+	cfg.UseCuda = true
+	summaries := RunImageBenchMulti(engines, img, cfg)
+	PrintBenchSummaryTable("Pose Estimation Models Benchmark (CUDA)", summaries)
 }
 
 // ============================================================
 // Batch Inference Benchmarks
 // ============================================================
 
-// TestBenchDetBatch compares batch inference across detection models.
 func TestBenchDetBatch(t *testing.T) {
-	img1, err1 := imageutil.Open("./test.png")
-	img2, err2 := imageutil.Open("./ship.jpg")
-	if err1 != nil || err2 != nil {
-		t.Skip("test.png or ship.jpg not found, skipping batch benchmark")
-	}
-
+	img1 := mustOpenExampleImage(t, "test.png")
+	img2 := mustOpenExampleImage(t, "ship.jpg")
 	imgs := []image.Image{img1, img2}
 
-	specs := []EngineSpec{
-		{Name: "yolo26", Task: "det", ModelPath: "../models/yolo26s.onnx", LibPath: "../lib/onnxruntime.dll", DynBatch: true},
-		{Name: "rfdetr", Task: "det", ModelPath: "../models/rf-detr/rf-detr-small.onnx", LibPath: "../lib/onnxruntime.dll", DynBatch: true},
-		{Name: "ltdetr", Task: "det", ModelPath: "../models/ltdetr/dinov3_vits16_ltdetr_coco.onnx", LibPath: "../lib/onnxruntime.dll", DynBatch: true},
-		{Name: "edgecrafter", Task: "det", ModelPath: "../models/edgecrafter/ecdet-s.onnx", LibPath: "../lib/onnxruntime.dll", DynBatch: true},
-	}
+	useCuda := useCudaFromEnv(false)
+	specs := BatchDetectionModelSpecs(useCuda)
 
 	engines, err := createEnginesFromSpecs(specs)
 	if err != nil {
@@ -182,20 +198,256 @@ func TestBenchDetBatch(t *testing.T) {
 	defer destroyEngines(engines)
 
 	cfg := DefaultBenchConfig()
+	cfg.UseCuda = useCuda
 	var summaries []BenchSummary
 	for _, e := range engines {
-		s := RunBatchBench(e, imgs, cfg)
-		summaries = append(summaries, s)
+		summaries = append(summaries, RunBatchBench(e, imgs, cfg))
 	}
 
-	PrintBatchBenchTable("Detection Batch Inference Benchmark", summaries, len(imgs))
+	title := "Detection Batch Inference Benchmark"
+	if useCuda {
+		title += " (CUDA)"
+	}
+	PrintBatchBenchTable(title, summaries, len(imgs))
+}
+
+func TestBenchDetBatchCuda(t *testing.T) {
+	img1 := mustOpenExampleImage(t, "test.png")
+	img2 := mustOpenExampleImage(t, "ship.jpg")
+	imgs := []image.Image{img1, img2}
+
+	specs := BatchDetectionModelSpecs(true)
+
+	engines, err := createEnginesFromSpecs(specs)
+	if err != nil {
+		t.Fatalf("failed to create engines: %v", err)
+	}
+	defer destroyEngines(engines)
+
+	cfg := DefaultBenchConfig()
+	cfg.UseCuda = true
+	var summaries []BenchSummary
+	for _, e := range engines {
+		summaries = append(summaries, RunBatchBench(e, imgs, cfg))
+	}
+
+	PrintBatchBenchTable("Detection Batch Inference Benchmark (CUDA)", summaries, len(imgs))
+}
+
+// ============================================================
+// Batch Size Sweep Benchmark
+// ============================================================
+
+func TestBenchDetBatchSweep(t *testing.T) {
+	img1 := mustOpenExampleImage(t, "test.png")
+	img2 := mustOpenExampleImage(t, "ship.jpg")
+	baseImgs := []image.Image{img1, img2}
+
+	useCuda := useCudaFromEnv(false)
+	specs := BatchDetectionModelSpecs(useCuda)
+
+	engines, err := createEnginesFromSpecs(specs)
+	if err != nil {
+		t.Fatalf("failed to create engines: %v", err)
+	}
+	defer destroyEngines(engines)
+
+	cfg := DefaultBenchConfig()
+	cfg.UseCuda = useCuda
+
+	batchSizes := []int{1, 2, 4}
+	RunBatchSweepBench(engines, baseImgs, batchSizes, cfg)
+}
+
+// ============================================================
+// Same-Model Scale Comparison Benchmarks
+// ============================================================
+
+func TestBenchYOLO26Scales(t *testing.T) {
+	img := mustOpenExampleImage(t, "test.png")
+	useCuda := useCudaFromEnv(false)
+	specs := YOLO26ScaleSpecs("det", useCuda)
+
+	engines, err := createEnginesFromSpecs(specs)
+	if err != nil {
+		t.Fatalf("failed to create engines: %v", err)
+	}
+	defer destroyEngines(engines)
+
+	cfg := DefaultBenchConfig()
+	cfg.UseCuda = useCuda
+	summaries := RunImageBenchMulti(engines, img, cfg)
+	title := "YOLO26 Scale Comparison (det)"
+	if useCuda {
+		title += " (CUDA)"
+	}
+	PrintBenchSummaryTable(title, summaries)
+}
+
+func TestBenchYOLO26ScalesCuda(t *testing.T) {
+	img := mustOpenExampleImage(t, "test.png")
+	specs := YOLO26ScaleSpecs("det", true)
+
+	engines, err := createEnginesFromSpecs(specs)
+	if err != nil {
+		t.Fatalf("failed to create engines: %v", err)
+	}
+	defer destroyEngines(engines)
+
+	cfg := DefaultBenchConfig()
+	cfg.UseCuda = true
+	summaries := RunImageBenchMulti(engines, img, cfg)
+	PrintBenchSummaryTable("YOLO26 Scale Comparison (det) (CUDA)", summaries)
+}
+
+func TestBenchRFDETRScales(t *testing.T) {
+	img := mustOpenExampleImage(t, "test.png")
+	useCuda := useCudaFromEnv(false)
+	specs := RFDETRScaleSpecs(useCuda)
+
+	engines, err := createEnginesFromSpecs(specs)
+	if err != nil {
+		t.Fatalf("failed to create engines: %v", err)
+	}
+	defer destroyEngines(engines)
+
+	cfg := DefaultBenchConfig()
+	cfg.UseCuda = useCuda
+	summaries := RunImageBenchMulti(engines, img, cfg)
+	title := "RF-DETR Scale Comparison"
+	if useCuda {
+		title += " (CUDA)"
+	}
+	PrintBenchSummaryTable(title, summaries)
+}
+
+func TestBenchRFDETRScalesCuda(t *testing.T) {
+	img := mustOpenExampleImage(t, "test.png")
+	specs := RFDETRScaleSpecs(true)
+
+	engines, err := createEnginesFromSpecs(specs)
+	if err != nil {
+		t.Fatalf("failed to create engines: %v", err)
+	}
+	defer destroyEngines(engines)
+
+	cfg := DefaultBenchConfig()
+	cfg.UseCuda = true
+	summaries := RunImageBenchMulti(engines, img, cfg)
+	PrintBenchSummaryTable("RF-DETR Scale Comparison (CUDA)", summaries)
+}
+
+// ============================================================
+// YOLOv11 Benchmarks
+// ============================================================
+
+func TestBenchYOLOv11Det(t *testing.T) {
+	img := mustOpenExampleImage(t, "test.png")
+	useCuda := useCudaFromEnv(false)
+	specs := YOLOv11ModelSpecs("det", useCuda)
+
+	engines, err := createEnginesFromSpecs(specs)
+	if err != nil {
+		t.Fatalf("failed to create engines: %v", err)
+	}
+	defer destroyEngines(engines)
+
+	cfg := DefaultBenchConfig()
+	cfg.UseCuda = useCuda
+	summaries := RunImageBenchMulti(engines, img, cfg)
+	title := "YOLOv11 Detection Benchmark"
+	if useCuda {
+		title += " (CUDA)"
+	}
+	PrintBenchSummaryTable(title, summaries)
+}
+
+func TestBenchYOLOv11Seg(t *testing.T) {
+	img := mustOpenExampleImage(t, "test.png")
+	useCuda := useCudaFromEnv(false)
+	specs := YOLOv11ModelSpecs("seg", useCuda)
+
+	engines, err := createEnginesFromSpecs(specs)
+	if err != nil {
+		t.Fatalf("failed to create engines: %v", err)
+	}
+	defer destroyEngines(engines)
+
+	cfg := DefaultBenchConfig()
+	cfg.UseCuda = useCuda
+	summaries := RunImageBenchMulti(engines, img, cfg)
+	title := "YOLOv11 Segmentation Benchmark"
+	if useCuda {
+		title += " (CUDA)"
+	}
+	PrintBenchSummaryTable(title, summaries)
+}
+
+func TestBenchYOLOv11Pose(t *testing.T) {
+	img := mustOpenExampleImage(t, "person.jpg")
+	useCuda := useCudaFromEnv(false)
+	specs := YOLOv11ModelSpecs("pose", useCuda)
+
+	engines, err := createEnginesFromSpecs(specs)
+	if err != nil {
+		t.Fatalf("failed to create engines: %v", err)
+	}
+	defer destroyEngines(engines)
+
+	cfg := DefaultBenchConfig()
+	cfg.UseCuda = useCuda
+	summaries := RunImageBenchMulti(engines, img, cfg)
+	title := "YOLOv11 Pose Estimation Benchmark"
+	if useCuda {
+		title += " (CUDA)"
+	}
+	PrintBenchSummaryTable(title, summaries)
+}
+
+// ============================================================
+// Depth-Anything-3 Benchmark
+// ============================================================
+
+func TestBenchDepthAnything3(t *testing.T) {
+	img := mustOpenExampleImage(t, "test.png")
+	specs := DepthAnything3Specs()
+
+	for _, spec := range specs {
+		cfg := depth_anything3.DefaultConfig()
+		cfg.ModelPath = spec.ModelPath
+		cfg.OnnxRuntimeLibPath = spec.LibPath
+
+		engine, err := depth_anything3.NewEngine(cfg)
+		if err != nil {
+			t.Logf("skipping %s: %v", spec.Name, err)
+			continue
+		}
+
+		// Warmup
+		for i := 0; i < 3; i++ {
+			_, _ = engine.Predict(img)
+		}
+
+		latencies := make([]time.Duration, 0, 30)
+		for i := 0; i < 30; i++ {
+			start := time.Now()
+			_, err := engine.Predict(img)
+			latencies = append(latencies, time.Since(start))
+			if err != nil {
+				t.Logf("inference error: %v", err)
+			}
+		}
+
+		summary := ComputeSummary(spec.Name, "depth", latencies, nil, 0)
+		PrintBenchSummaryTable(fmt.Sprintf("Depth-Anything-3: %s", spec.Name), []BenchSummary{summary})
+		engine.Destroy()
+	}
 }
 
 // ============================================================
 // Image Directory Benchmarks
 // ============================================================
 
-// TestBenchDetImageDir benchmarks detection models against all images in a directory.
 func TestBenchDetImageDir(t *testing.T) {
 	dir := "."
 	imagePaths, err := loadImagesFromDir(dir)
@@ -203,12 +455,8 @@ func TestBenchDetImageDir(t *testing.T) {
 		t.Skip("no image files found in current directory")
 	}
 
-	specs := []EngineSpec{
-		{Name: "yolo26", Task: "det", ModelPath: "../models/yolo26s.onnx", LibPath: "../lib/onnxruntime.dll"},
-		{Name: "rfdetr", Task: "det", ModelPath: "../models/rf-detr/rf-detr-small.onnx", LibPath: "../lib/onnxruntime.dll"},
-		{Name: "ltdetr", Task: "det", ModelPath: "../models/ltdetr/dinov3_vits16_ltdetr_coco.onnx", LibPath: "../lib/onnxruntime.dll"},
-		{Name: "edgecrafter", Task: "det", ModelPath: "../models/edgecrafter/ecdet-s.onnx", LibPath: "../lib/onnxruntime.dll"},
-	}
+	useCuda := useCudaFromEnv(false)
+	specs := DetectionModelSpecs(useCuda)
 
 	engines, err := createEnginesFromSpecs(specs)
 	if err != nil {
@@ -217,12 +465,17 @@ func TestBenchDetImageDir(t *testing.T) {
 	defer destroyEngines(engines)
 
 	cfg := DefaultBenchConfig()
+	cfg.UseCuda = useCuda
 	summaries, err := RunImageDirBench(engines, dir, cfg)
 	if err != nil {
 		t.Fatalf("image dir benchmark failed: %v", err)
 	}
 
-	PrintBenchSummaryTable("Detection Models - Image Directory Benchmark", summaries)
+	title := "Detection Models - Image Directory Benchmark"
+	if useCuda {
+		title += " (CUDA)"
+	}
+	PrintBenchSummaryTable(title, summaries)
 	PrintBenchDetectionsTable("Detection Counts", summaries)
 }
 
@@ -230,7 +483,6 @@ func TestBenchDetImageDir(t *testing.T) {
 // Video Benchmarks
 // ============================================================
 
-// TestBenchDetVideo benchmarks detection models against video frames.
 func TestBenchDetVideo(t *testing.T) {
 	checkFFmpeg(t)
 
@@ -247,13 +499,8 @@ func TestBenchDetVideo(t *testing.T) {
 
 	t.Logf("Using video: %s", videoPath)
 
-	specs := []EngineSpec{
-		{Name: "yolo26", Task: "det", ModelPath: "../models/yolo26s.onnx", LibPath: "../lib/onnxruntime.dll", UseCuda: true},
-		{Name: "rfdetr", Task: "det", ModelPath: "../models/rf-detr/rf-detr-small.onnx", LibPath: "../lib/onnxruntime.dll", UseCuda: true},
-		{Name: "ltdetr", Task: "det", ModelPath: "../models/ltdetr/dinov3_vits16_ltdetr_coco.onnx", LibPath: "../lib/onnxruntime.dll", UseCuda: true},
-		{Name: "edgecrafter", Task: "det", ModelPath: "../models/edgecrafter/ecdet-s.onnx", LibPath: "../lib/onnxruntime.dll", UseCuda: true},
-	}
-
+	useCuda := useCudaFromEnv(true)
+	specs := DetectionModelSpecs(useCuda)
 	engines, err := createEnginesFromSpecs(specs)
 	if err != nil {
 		t.Fatalf("failed to create engines: %v", err)
@@ -261,15 +508,19 @@ func TestBenchDetVideo(t *testing.T) {
 	defer destroyEngines(engines)
 
 	summaries := RunVideoBench(t, engines, videoPath, 5.0)
-	PrintBenchSummaryTable("Detection Models - Video Benchmark (5fps)", summaries)
+	title := "Detection Models - Video Benchmark (5fps)"
+	if useCuda {
+		title += " (CUDA)"
+	}
+	PrintBenchSummaryTable(title, summaries)
 	PrintBenchDetectionsTable("Detection Counts per Frame", summaries)
 
-	if err := WriteBenchCSV("bench_det_video_results.csv", summaries); err != nil {
+	csvPath := exampleArtifactPath("bench_det_video_results.csv")
+	if err := WriteBenchCSV(csvPath, summaries); err != nil {
 		t.Logf("failed to write CSV: %v", err)
 	}
 }
 
-// TestBenchDetVideoStream benchmarks detection models via video stream (pipe).
 func TestBenchDetVideoStream(t *testing.T) {
 	checkFFmpeg(t)
 
@@ -284,13 +535,8 @@ func TestBenchDetVideoStream(t *testing.T) {
 		videoPath = found
 	}
 
-	specs := []EngineSpec{
-		{Name: "yolo26", Task: "det", ModelPath: "../models/yolo26s.onnx", LibPath: "../lib/onnxruntime.dll", UseCuda: true},
-		{Name: "rfdetr", Task: "det", ModelPath: "../models/rf-detr/rf-detr-small.onnx", LibPath: "../lib/onnxruntime.dll", UseCuda: true},
-		{Name: "ltdetr", Task: "det", ModelPath: "../models/ltdetr/dinov3_vits16_ltdetr_coco.onnx", LibPath: "../lib/onnxruntime.dll", UseCuda: true},
-		{Name: "edgecrafter", Task: "det", ModelPath: "../models/edgecrafter/ecdet-s.onnx", LibPath: "../lib/onnxruntime.dll", UseCuda: true},
-	}
-
+	useCuda := useCudaFromEnv(true)
+	specs := DetectionModelSpecs(useCuda)
 	engines, err := createEnginesFromSpecs(specs)
 	if err != nil {
 		t.Fatalf("failed to create engines: %v", err)
@@ -298,24 +544,21 @@ func TestBenchDetVideoStream(t *testing.T) {
 	defer destroyEngines(engines)
 
 	summaries := RunVideoStreamBench(t, engines, videoPath, 5.0)
-	PrintBenchSummaryTable("Detection Models - Video Stream Benchmark (5fps)", summaries)
+	title := "Detection Models - Video Stream Benchmark (5fps)"
+	if useCuda {
+		title += " (CUDA)"
+	}
+	PrintBenchSummaryTable(title, summaries)
 }
 
 // ============================================================
 // Custom Comparison (pairwise)
 // ============================================================
 
-// TestBenchYOLO26VsLTDETR compares YOLO26 vs LTDETR detection.
 func TestBenchYOLO26VsLTDETR(t *testing.T) {
-	img, err := imageutil.Open("./test.png")
-	if err != nil {
-		t.Skip("test.png not found")
-	}
-
-	specs := []EngineSpec{
-		{Name: "yolo26", Task: "det", ModelPath: "../models/yolo26s.onnx", LibPath: "../lib/onnxruntime.dll"},
-		{Name: "ltdetr", Task: "det", ModelPath: "../models/ltdetr/dinov3_vits16_ltdetr_coco.onnx", LibPath: "../lib/onnxruntime.dll"},
-	}
+	img := mustOpenExampleImage(t, "test.png")
+	useCuda := useCudaFromEnv(false)
+	specs := DetectionPairSpecs("yolo26", "ltdetr", useCuda)
 
 	engines, err := createEnginesFromSpecs(specs)
 	if err != nil {
@@ -324,21 +567,19 @@ func TestBenchYOLO26VsLTDETR(t *testing.T) {
 	defer destroyEngines(engines)
 
 	cfg := DefaultBenchConfig()
+	cfg.UseCuda = useCuda
 	summaries := RunImageBenchMulti(engines, img, cfg)
-	PrintBenchSummaryTable("YOLO26 vs LTDETR", summaries)
+	title := "YOLO26 vs LTDETR"
+	if useCuda {
+		title += " (CUDA)"
+	}
+	PrintBenchSummaryTable(title, summaries)
 }
 
-// TestBenchRFDETRVsEdgeCrafter compares RF-DETR vs EdgeCrafter detection.
 func TestBenchRFDETRVsEdgeCrafter(t *testing.T) {
-	img, err := imageutil.Open("./test.png")
-	if err != nil {
-		t.Skip("test.png not found")
-	}
-
-	specs := []EngineSpec{
-		{Name: "rfdetr", Task: "det", ModelPath: "../models/rf-detr/rf-detr-small.onnx", LibPath: "../lib/onnxruntime.dll"},
-		{Name: "edgecrafter", Task: "det", ModelPath: "../models/edgecrafter/ecdet-s.onnx", LibPath: "../lib/onnxruntime.dll"},
-	}
+	img := mustOpenExampleImage(t, "test.png")
+	useCuda := useCudaFromEnv(false)
+	specs := DetectionPairSpecs("rfdetr", "edgecrafter", useCuda)
 
 	engines, err := createEnginesFromSpecs(specs)
 	if err != nil {
@@ -347,21 +588,19 @@ func TestBenchRFDETRVsEdgeCrafter(t *testing.T) {
 	defer destroyEngines(engines)
 
 	cfg := DefaultBenchConfig()
+	cfg.UseCuda = useCuda
 	summaries := RunImageBenchMulti(engines, img, cfg)
-	PrintBenchSummaryTable("RF-DETR vs EdgeCrafter", summaries)
+	title := "RF-DETR vs EdgeCrafter"
+	if useCuda {
+		title += " (CUDA)"
+	}
+	PrintBenchSummaryTable(title, summaries)
 }
 
-// TestBenchYOLO26VsEdgeCrafterPose compares YOLO26 vs EdgeCrafter pose estimation.
 func TestBenchYOLO26VsEdgeCrafterPose(t *testing.T) {
-	img, err := imageutil.Open("./person.jpg")
-	if err != nil {
-		t.Skip("person.jpg not found")
-	}
-
-	specs := []EngineSpec{
-		{Name: "yolo26", Task: "pose", ModelPath: "../models/yolo26s-pose.onnx", LibPath: "../lib/onnxruntime.dll"},
-		{Name: "edgecrafter", Task: "pose", ModelPath: "../models/edgecrafter/ecpose-s.onnx", LibPath: "../lib/onnxruntime.dll"},
-	}
+	img := mustOpenExampleImage(t, "person.jpg")
+	useCuda := useCudaFromEnv(false)
+	specs := PoseModelSpecs(useCuda)
 
 	engines, err := createEnginesFromSpecs(specs)
 	if err != nil {
@@ -370,6 +609,11 @@ func TestBenchYOLO26VsEdgeCrafterPose(t *testing.T) {
 	defer destroyEngines(engines)
 
 	cfg := DefaultBenchConfig()
+	cfg.UseCuda = useCuda
 	summaries := RunImageBenchMulti(engines, img, cfg)
-	PrintBenchSummaryTable("YOLO26 vs EdgeCrafter Pose Estimation", summaries)
+	title := "YOLO26 vs EdgeCrafter Pose Estimation"
+	if useCuda {
+		title += " (CUDA)"
+	}
+	PrintBenchSummaryTable(title, summaries)
 }

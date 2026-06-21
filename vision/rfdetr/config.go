@@ -3,6 +3,7 @@ package rfdetr
 import (
 	"image"
 
+	"github.com/DavidSche/raven-onnxruntime/internal/modelpath"
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
 )
 
@@ -39,13 +40,13 @@ func DefaultConfig() Config {
 
 func DefaultDetConfig() Config {
 	cfg := DefaultConfig()
-	cfg.ModelPath = "./models/rf-detr/rf-detr-base-coco.onnx"
+	cfg.ModelPath = modelpath.ModelPath("rf-detr", "rf-detr-base-coco.onnx")
 	return cfg
 }
 
 func DefaultSegConfig() Config {
 	cfg := DefaultConfig()
-	cfg.ModelPath = "./models/rf-detr/rf-detr-seg-nano.onnx"
+	cfg.ModelPath = modelpath.ModelPath("rf-detr", "rf-detr-seg-nano.onnx")
 	return cfg
 }
 

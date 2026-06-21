@@ -3,6 +3,7 @@ package ltdetr
 import (
 	"image"
 
+	"github.com/DavidSche/raven-onnxruntime/internal/modelpath"
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
 )
 
@@ -34,7 +35,7 @@ func DefaultConfig() Config {
 
 func DefaultDetConfig() Config {
 	cfg := DefaultConfig()
-	cfg.ModelPath = "./models/ltdetr/dinov3_vits16_ltdetr_coco.onnx"
+	cfg.ModelPath = modelpath.ModelPath("ltdetr", "dinov3_vits16-ltdetr-coco.onnx")
 	return cfg
 }
 

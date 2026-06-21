@@ -3,6 +3,7 @@ package yolo26
 import (
 	"image"
 
+	"github.com/DavidSche/raven-onnxruntime/internal/modelpath"
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
 )
 
@@ -59,7 +60,7 @@ func DefaultConfig() Config {
 // DefaultDetConfig returns default detection configuration
 func DefaultDetConfig() Config {
 	cfg := DefaultConfig()
-	cfg.ModelPath = "./yolo26_weights/yolo26m.onnx"
+	cfg.ModelPath = modelpath.ModelPath("yolo26", "yolo26m.onnx")
 	return cfg
 }
 
@@ -72,7 +73,7 @@ type imageParams struct {
 // DefaultSegConfig returns default segmentation configuration
 func DefaultSegConfig() Config {
 	cfg := DefaultConfig()
-	cfg.ModelPath = "./yolo26_weights/yolo26m-seg.onnx"
+	cfg.ModelPath = modelpath.ModelPath("yolo26", "yolo26m-seg.onnx")
 	return cfg
 }
 
@@ -105,7 +106,7 @@ type ClassResult struct {
 func DefaultClsConfig() Config {
 	cfg := DefaultConfig()
 	cfg.InputSize = 224
-	cfg.ModelPath = "./yolo26_weights/yolo26-cls.onnx"
+	cfg.ModelPath = modelpath.ModelPath("yolo26", "yolo26-cls.onnx")
 	return cfg
 }
 
@@ -128,7 +129,7 @@ type PoseResult struct {
 func DefaultPoseConfig() Config {
 	cfg := DefaultConfig()
 	cfg.NumClasses = 1
-	cfg.ModelPath = "./yolo26_weights/yolo26m-pose.onnx"
+	cfg.ModelPath = modelpath.ModelPath("yolo26", "yolo26m-pose.onnx")
 	return cfg
 }
 
@@ -148,6 +149,6 @@ func DefaultOBBConfig() Config {
 	cfg := DefaultConfig()
 	cfg.InputSize = 1024
 	cfg.NumClasses = 15
-	cfg.ModelPath = "./yolo26_weights/yolo26m-obb.onnx"
+	cfg.ModelPath = modelpath.ModelPath("yolo26", "yolo26m-obb.onnx")
 	return cfg
 }

@@ -56,6 +56,7 @@ A pure Go ONNX Runtime visual model inference library, using [purego](https://gi
 | EdgeCrafter | Pose Estimation | `vision/edgecrafter` | ✅ PredictBatch | ✅ |
 | SAM2 | Image Segmentation | `vision/sam2` | — | ✅ |
 | SAM3 / SAM3H / SAM3.1 | Image Segmentation | `vision/sam3` | — | ✅ |
+| Depth-Anything-3 | Depth Estimation | `vision/depth_anything3` | — | ✅ |
 
 ## Project Structure
 
@@ -84,7 +85,8 @@ raven-onnxruntime/
 │   ├── ltdetr/                 # LTDETR models (det)
 │   ├── edgecrafter/            # EdgeCrafter models (det/seg/pose)
 │   ├── sam2/                   # SAM2 image segmentation
-│   └── sam3/                   # SAM3H / SAM3.1 image segmentation
+│   ├── sam3/                   # SAM3H / SAM3.1 image segmentation
+│   └── depth_anything3/        # Depth-Anything-3 depth estimation
 ├── include/                    # ONNX Runtime C API headers
 ├── examples/                   # Usage examples
 ├── assets/                     # Project assets
@@ -104,6 +106,8 @@ go get github.com/DavidSche/raven-onnxruntime
 
 - Go 1.24+
 - ONNX Runtime shared library (`onnxruntime.dll` / `libonnxruntime.so` / `libonnxruntime.dylib`)
+- Canonical model directory: repository root `models/` (override with `RAVEN_MODELS_DIR` if needed)
+- ONNX Runtime path can be overridden with `RAVEN_ORT_LIB_PATH`
 
 ### YOLO26 Detection
 
@@ -119,8 +123,8 @@ import (
 
 func main() {
     cfg := yolo26.DefaultDetConfig()
-    cfg.ModelPath = "yolo26n-det.onnx"
-    cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+    cfg.ModelPath = "models/yolo26/yolo26m.onnx"
+    cfg.OnnxRuntimeLibPath = "lib/onnxruntime.dll"
     cfg.UseCuda = true
 
     engine, err := yolo26.NewDetEngine(cfg)
@@ -140,8 +144,8 @@ func main() {
 
 ```go
 cfg := yolo26.DefaultConfig()
-cfg.ModelPath = "yolo26n-pose.onnx"
-cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+cfg.ModelPath = "models/yolo26/yolo26m-pose.onnx"
+cfg.OnnxRuntimeLibPath = "lib/onnxruntime.dll"
 cfg.NumKeyPoints = 17
 
 engine, err := yolo26.NewPoseEngine(cfg)
@@ -155,8 +159,8 @@ results, err := engine.Predict(img)
 
 ```go
 cfg := rfdetr.DefaultDetConfig()
-cfg.ModelPath = "rf-detr-base-coco.onnx"
-cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+cfg.ModelPath = "models/rf-detr/rf-detr-base-coco.onnx"
+cfg.OnnxRuntimeLibPath = "lib/onnxruntime.dll"
 
 engine, err := rfdetr.NewDetEngine(cfg)
 defer engine.Destroy()
@@ -170,8 +174,8 @@ results, err := engine.Predict(img)
 
 ```go
 cfg := ltdetr.DefaultDetConfig()
-cfg.ModelPath = "dinov3_vits16_ltdetr_coco.onnx"
-cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+cfg.ModelPath = "models/ltdetr/dinov3_vits16-ltdetr-coco.onnx"
+cfg.OnnxRuntimeLibPath = "lib/onnxruntime.dll"
 
 engine, err := ltdetr.NewDetEngine(cfg)
 defer engine.Destroy()
@@ -185,8 +189,8 @@ results, err := engine.Predict(img)
 
 ```go
 cfg := edgecrafter.DefaultDetConfig()
-cfg.ModelPath = "ecdet-s.onnx"
-cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+cfg.ModelPath = "models/ecdet/ecdet_s.onnx"
+cfg.OnnxRuntimeLibPath = "lib/onnxruntime.dll"
 
 engine, err := edgecrafter.NewDetEngine(cfg)
 defer engine.Destroy()
@@ -200,8 +204,8 @@ results, err := engine.Predict(img)
 
 ```go
 cfg := edgecrafter.DefaultSegConfig()
-cfg.ModelPath = "ecseg-s.onnx"
-cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+cfg.ModelPath = "models/ecdet/ecseg_s.onnx"
+cfg.OnnxRuntimeLibPath = "lib/onnxruntime.dll"
 
 engine, err := edgecrafter.NewSegEngine(cfg)
 defer engine.Destroy()
@@ -214,8 +218,8 @@ results, err := engine.Predict(img)
 
 ```go
 cfg := edgecrafter.DefaultPoseConfig()
-cfg.ModelPath = "ecpose-s.onnx"
-cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+cfg.ModelPath = "models/ecdet/ecpose_s.onnx"
+cfg.OnnxRuntimeLibPath = "lib/onnxruntime.dll"
 
 engine, err := edgecrafter.NewPoseEngine(cfg)
 defer engine.Destroy()
@@ -228,9 +232,8 @@ results, err := engine.Predict(img)
 
 ```go
 cfg := sam2.DefaultConfig()
-cfg.EncodeModelPath = "sam2_encoder.onnx"
-cfg.DecodeModelPath = "sam2_decoder.onnx"
-cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+cfg.ModelPath = "models/sam2"
+cfg.OnnxRuntimeLibPath = "lib/onnxruntime.dll"
 
 engine, err := sam2.NewEngine(cfg)
 defer engine.Destroy()
@@ -246,10 +249,8 @@ mask, score, err := ctx.Decode(points)
 
 ```go
 cfg := sam3.DefaultConfig()
-cfg.VisionModelPath = "sam3_vision_encoder.onnx"
-cfg.TextModelPath = "sam3_text_encoder.onnx"
-cfg.DecoderModelPath = "sam3_decoder.onnx"
-cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+cfg.ModelPath = "models/sam3"
+cfg.OnnxRuntimeLibPath = "lib/onnxruntime.dll"
 
 engine, err := sam3.NewEngine(cfg)
 defer engine.Destroy()
@@ -259,6 +260,28 @@ defer ctx.Destroy()
 
 points := []sam3.Point{{X: 320, Y: 240, Label: sam3.LabelForeground}}
 mask, score, err := ctx.Decode(points)
+```
+
+### Depth-Anything-3 Depth Estimation
+
+```go
+cfg := depth_anything3.DefaultConfig()
+cfg.ModelPath = "models/da3-small/da3-small_518x518.onnx"
+cfg.OnnxRuntimeLibPath = "lib/onnxruntime.dll"
+
+engine, err := depth_anything3.NewEngine(cfg)
+defer engine.Destroy()
+
+result, err := engine.Predict(img)
+// result.Depth contains the depth map (H, W)
+// result.Confidence contains the depth confidence map (H, W)
+
+// Visualize: pseudo-color depth map
+colorImg := depth_anything3.DepthToColormap(result)
+// Visualize: depth overlay on original image
+overlayImg := depth_anything3.DrawDepthOverlay(img, result, 0.5)
+// Visualize: confidence-filtered depth map
+confImg := depth_anything3.DrawDepthWithConfidence(result, 0.3)
 ```
 
 ## Logging Configuration

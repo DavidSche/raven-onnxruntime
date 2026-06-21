@@ -43,8 +43,8 @@ func drawDetResults(img image.Image, yoloResults []yolo26.DetResult, rfdetrResul
 
 func TestCompareYOLO26VsRFDETR(t *testing.T) {
 	yoloCfg := yolo26.DefaultDetConfig()
-	yoloCfg.ModelPath = "../../models/yolo26s.onnx"
-	yoloCfg.OnnxRuntimeLibPath = "../../lib/onnxruntime.dll"
+	yoloCfg.ModelPath = ExampleModelPath("yolo26", "yolo26s.onnx")
+	yoloCfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 
 	yoloEngine, err := yolo26.NewDetEngine(yoloCfg)
 	if err != nil {
@@ -53,8 +53,8 @@ func TestCompareYOLO26VsRFDETR(t *testing.T) {
 	defer yoloEngine.Destroy()
 
 	rfdetrCfg := rfdetr.DefaultDetConfig()
-	rfdetrCfg.ModelPath = "../../models/rf-detr/rf-detr-samll.onnx"
-	rfdetrCfg.OnnxRuntimeLibPath = "../../lib/onnxruntime.dll"
+	rfdetrCfg.ModelPath = ExampleModelPath("rf-detr", "rf-detr-small.onnx")
+	rfdetrCfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 
 	rfdetrEngine, err := rfdetr.NewDetEngine(rfdetrCfg)
 	if err != nil {
@@ -109,7 +109,7 @@ func TestCompareYOLO26VsRFDETR(t *testing.T) {
 		outName := fmt.Sprintf("compare_%s", fileName)
 		ext := filepath.Ext(outName)
 		outName = strings.TrimSuffix(outName, ext) + ".jpg"
-		if err := imageutil.Save(outName, overlayImg, 80); err != nil {
+		if err := imageutil.Save(exampleArtifactPath("compare", outName), overlayImg, 80); err != nil {
 			t.Logf("failed to save overlay image %s: %v", outName, err)
 		}
 	}
@@ -149,13 +149,13 @@ func TestCompareYOLO26VsRFDETR(t *testing.T) {
 	fmt.Println(strings.Repeat("-", 80))
 
 	fmt.Println("\nLegend: Green boxes = YOLO26, Blue boxes = RF-DETR")
-	fmt.Println("Overlay images saved as compare_*.jpg")
+	fmt.Println("Overlay images saved under artifacts/benchmarks/compare_*.jpg")
 }
 
 func TestCompareYOLO26VsRFDETRSingleImage(t *testing.T) {
 	yoloCfg := yolo26.DefaultDetConfig()
-	yoloCfg.ModelPath = "../../models/yolo26s.onnx"
-	yoloCfg.OnnxRuntimeLibPath = "../../lib/onnxruntime.dll"
+	yoloCfg.ModelPath = ExampleModelPath("yolo26", "yolo26s.onnx")
+	yoloCfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 
 	yoloEngine, err := yolo26.NewDetEngine(yoloCfg)
 	if err != nil {
@@ -164,8 +164,8 @@ func TestCompareYOLO26VsRFDETRSingleImage(t *testing.T) {
 	defer yoloEngine.Destroy()
 
 	rfdetrCfg := rfdetr.DefaultDetConfig()
-	rfdetrCfg.ModelPath = "../../models/rf-detr/rf-detr-small.onnx"
-	rfdetrCfg.OnnxRuntimeLibPath = "../../lib/onnxruntime.dll"
+	rfdetrCfg.ModelPath = ExampleModelPath("rf-detr", "rf-detr-small.onnx")
+	rfdetrCfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 
 	rfdetrEngine, err := rfdetr.NewDetEngine(rfdetrCfg)
 	if err != nil {
@@ -173,10 +173,7 @@ func TestCompareYOLO26VsRFDETRSingleImage(t *testing.T) {
 	}
 	defer rfdetrEngine.Destroy()
 
-	img, err := imageutil.Open("./test.png")
-	if err != nil {
-		t.Skip("test.png not found, skipping single image comparison")
-	}
+	img := mustOpenExampleImage(t, "test.png")
 
 	yoloStart := time.Now()
 	yoloResults, err := yoloEngine.Predict(img)
@@ -209,16 +206,16 @@ func TestCompareYOLO26VsRFDETRSingleImage(t *testing.T) {
 	fmt.Printf("\nLatency comparison: YOLO26=%v | RF-DETR=%v\n", yoloElapsed.Round(time.Microsecond), rfdetrElapsed.Round(time.Microsecond))
 
 	overlayImg := drawDetResults(img, yoloResults, rfdetrResults)
-	if err := imageutil.Save("compare_single.jpg", overlayImg, 80); err != nil {
+	if err := imageutil.Save(exampleArtifactPath("compare_single.jpg"), overlayImg, 80); err != nil {
 		t.Logf("failed to save overlay image: %v", err)
 	}
-	fmt.Println("Overlay image saved as compare_single.jpg (Green=YOLO26, Blue=RF-DETR)")
+	fmt.Println("Overlay image saved under artifacts/benchmarks/compare_single.jpg (Green=YOLO26, Blue=RF-DETR)")
 }
 
 func TestCompareYOLO26VsRFDETRBenchmark(t *testing.T) {
 	yoloCfg := yolo26.DefaultDetConfig()
-	yoloCfg.ModelPath = "../../models/yolo26s.onnx"
-	yoloCfg.OnnxRuntimeLibPath = "../../lib/onnxruntime.dll"
+	yoloCfg.ModelPath = ExampleModelPath("yolo26", "yolo26s.onnx")
+	yoloCfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 
 	yoloEngine, err := yolo26.NewDetEngine(yoloCfg)
 	if err != nil {
@@ -227,8 +224,8 @@ func TestCompareYOLO26VsRFDETRBenchmark(t *testing.T) {
 	defer yoloEngine.Destroy()
 
 	rfdetrCfg := rfdetr.DefaultDetConfig()
-	rfdetrCfg.ModelPath = "../../models/rf-detr/rf-detr-small.onnx"
-	rfdetrCfg.OnnxRuntimeLibPath = "../../lib/onnxruntime.dll"
+	rfdetrCfg.ModelPath = ExampleModelPath("rf-detr", "rf-detr-small.onnx")
+	rfdetrCfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 
 	rfdetrEngine, err := rfdetr.NewDetEngine(rfdetrCfg)
 	if err != nil {
@@ -236,30 +233,35 @@ func TestCompareYOLO26VsRFDETRBenchmark(t *testing.T) {
 	}
 	defer rfdetrEngine.Destroy()
 
-	img, err := imageutil.Open("./test.png")
-	if err != nil {
-		t.Skip("test.png not found, skipping benchmark")
-	}
+	img := mustOpenExampleImage(t, "test.png")
 
 	const warmupRuns = 5
 	const benchRuns = 30
 
 	for i := 0; i < warmupRuns; i++ {
-		yoloEngine.Predict(img)
-		rfdetrEngine.Predict(img)
+		if _, err := yoloEngine.Predict(img); err != nil {
+			t.Fatalf("YOLO26 warmup failed: %v", err)
+		}
+		if _, err := rfdetrEngine.Predict(img); err != nil {
+			t.Fatalf("RF-DETR warmup failed: %v", err)
+		}
 	}
 
 	var yoloTotal time.Duration
 	for i := 0; i < benchRuns; i++ {
 		start := time.Now()
-		yoloEngine.Predict(img)
+		if _, err := yoloEngine.Predict(img); err != nil {
+			t.Fatalf("YOLO26 benchmark failed: %v", err)
+		}
 		yoloTotal += time.Since(start)
 	}
 
 	var rfdetrTotal time.Duration
 	for i := 0; i < benchRuns; i++ {
 		start := time.Now()
-		rfdetrEngine.Predict(img)
+		if _, err := rfdetrEngine.Predict(img); err != nil {
+			t.Fatalf("RF-DETR benchmark failed: %v", err)
+		}
 		rfdetrTotal += time.Since(start)
 	}
 

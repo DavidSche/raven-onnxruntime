@@ -21,12 +21,13 @@ func PrintBenchSummaryTable(title string, summaries []BenchSummary) {
 	}
 
 	// Header
-	fmt.Printf("%-18s | %-5s | %8s | %8s | %8s | %8s | %8s | %8s | %7s\n",
-		"Model", "Task", "Avg(ms)", "P50(ms)", "P95(ms)", "P99(ms)", "Min(ms)", "Max(ms)", "FPS")
-	fmt.Println(strings.Repeat("-", 100))
+	fmt.Printf("%-18s | %-5s | %8s | %8s | %8s | %8s | %8s | %8s | %7s | %7s | %7s | %6s\n",
+		"Model", "Task", "Avg(ms)", "P50(ms)", "P95(ms)", "P99(ms)", "Min(ms)", "Max(ms)", "FPS", "Errors", "StdDev", "CV%")
+	fmt.Println(strings.Repeat("-", 125))
 
 	for _, s := range summaries {
-		fmt.Printf("%-18s | %-5s | %8.2f | %8.2f | %8.2f | %8.2f | %8.2f | %8.2f | %7.1f\n",
+		cvPercent := s.CV * 100
+		fmt.Printf("%-18s | %-5s | %8.2f | %8.2f | %8.2f | %8.2f | %8.2f | %8.2f | %7.1f | %7d | %7.2f | %5.1f\n",
 			s.EngineName,
 			s.Task,
 			float64(s.AvgMs)/float64(time.Millisecond),
@@ -36,23 +37,28 @@ func PrintBenchSummaryTable(title string, summaries []BenchSummary) {
 			float64(s.MinMs)/float64(time.Millisecond),
 			float64(s.MaxMs)/float64(time.Millisecond),
 			s.FPS,
+			s.ErrorCount,
+			float64(s.StdDevMs)/float64(time.Millisecond),
+			cvPercent,
 		)
 	}
-	fmt.Println(strings.Repeat("-", 100))
+	fmt.Println(strings.Repeat("-", 125))
 
 	// Speedup comparison (relative to first engine)
 	if len(summaries) > 1 {
 		base := summaries[0]
 		fmt.Printf("\nSpeedup relative to %s:\n", base.EngineName)
 		for _, s := range summaries[1:] {
-			if base.AvgMs == 0 {
+			if base.AvgMs == 0 || s.AvgMs == 0 {
 				continue
 			}
 			ratio := float64(base.AvgMs) / float64(s.AvgMs)
 			if ratio >= 1.0 {
-				fmt.Printf("  %s is %.2fx faster than %s\n", base.EngineName, ratio, s.EngineName)
+				// base is slower (higher ms), so s is faster
+				fmt.Printf("  %s is %.2fx faster than %s\n", s.EngineName, ratio, base.EngineName)
 			} else {
-				fmt.Printf("  %s is %.2fx faster than %s\n", s.EngineName, 1.0/ratio, base.EngineName)
+				// base is faster (lower ms)
+				fmt.Printf("  %s is %.2fx faster than %s\n", base.EngineName, 1.0/ratio, s.EngineName)
 			}
 		}
 	}
@@ -146,7 +152,7 @@ func WriteBenchCSV(path string, summaries []BenchSummary) error {
 	w := csv.NewWriter(f)
 	defer w.Flush()
 
-	header := []string{"Model", "Task", "TotalFrames", "TotalDets", "AvgMs", "P50Ms", "P95Ms", "P99Ms", "MinMs", "MaxMs", "FPS"}
+	header := []string{"Model", "Task", "TotalFrames", "TotalDets", "ErrorCount", "AvgMs", "P50Ms", "P95Ms", "P99Ms", "MinMs", "MaxMs", "StdDevMs", "CV", "FPS", "PeakMemoryMB"}
 	if err := w.Write(header); err != nil {
 		return err
 	}
@@ -157,13 +163,17 @@ func WriteBenchCSV(path string, summaries []BenchSummary) error {
 			s.Task,
 			fmt.Sprintf("%d", s.TotalFrames),
 			fmt.Sprintf("%d", s.TotalDets),
+			fmt.Sprintf("%d", s.ErrorCount),
 			fmt.Sprintf("%.3f", float64(s.AvgMs)/float64(time.Millisecond)),
 			fmt.Sprintf("%.3f", float64(s.P50Ms)/float64(time.Millisecond)),
 			fmt.Sprintf("%.3f", float64(s.P95Ms)/float64(time.Millisecond)),
 			fmt.Sprintf("%.3f", float64(s.P99Ms)/float64(time.Millisecond)),
 			fmt.Sprintf("%.3f", float64(s.MinMs)/float64(time.Millisecond)),
 			fmt.Sprintf("%.3f", float64(s.MaxMs)/float64(time.Millisecond)),
+			fmt.Sprintf("%.3f", float64(s.StdDevMs)/float64(time.Millisecond)),
+			fmt.Sprintf("%.4f", s.CV),
 			fmt.Sprintf("%.2f", s.FPS),
+			fmt.Sprintf("%.1f", s.PeakMemoryMB),
 		}
 		if err := w.Write(record); err != nil {
 			return err

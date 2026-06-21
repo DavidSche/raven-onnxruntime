@@ -19,6 +19,12 @@ type Engine struct {
 
 // NewEngine initializes the SAM2 engine
 func NewEngine(cfg Config) (*Engine, error) {
+	// 从 manifest.json 解析子模型路径
+	encoderPath, decoderPath, err := cfg.resolveSubModelPaths()
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve sub-model paths: %w", err)
+	}
+
 	oc := new(vision.OnnxConfig)
 	if err := convertutil.CopyProperties(cfg, oc); err != nil {
 		return nil, fmt.Errorf("failed to copy config properties: %w", err)
@@ -29,14 +35,14 @@ func NewEngine(cfg Config) (*Engine, error) {
 	}
 
 	// encoder session
-	encSession, err := oc.OnnxEngine.NewSession(cfg.EncodeModelPath, oc.SessionOptions)
+	encSession, err := oc.OnnxEngine.NewSession(encoderPath, oc.SessionOptions)
 	if err != nil {
 		oc.Destroy()
 		return nil, fmt.Errorf("failed to create encoder ONNX session: %w", err)
 	}
 
 	// decoder session
-	decSession, err := oc.OnnxEngine.NewSession(cfg.DecodeModelPath, oc.SessionOptions)
+	decSession, err := oc.OnnxEngine.NewSession(decoderPath, oc.SessionOptions)
 	oc.Destroy()
 	if err != nil {
 		encSession.Destroy()

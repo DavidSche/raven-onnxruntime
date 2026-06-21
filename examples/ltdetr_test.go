@@ -13,8 +13,8 @@ import (
 
 func TestLTDETRDet(t *testing.T) {
 	cfg := ltdetr.DefaultDetConfig()
-	cfg.ModelPath = "../models/ltdetr/dinov3_vits16_ltdetr_coco.onnx"
-	cfg.OnnxRuntimeLibPath = "../lib/onnxruntime.dll"
+	cfg.ModelPath = ExampleModelPath("ltdetr", "dinov3_vits16-ltdetr-coco.onnx")
+	cfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 
 	engine, err := ltdetr.NewDetEngine(cfg)
 	if err != nil {
@@ -22,7 +22,7 @@ func TestLTDETRDet(t *testing.T) {
 	}
 	defer engine.Destroy()
 
-	img, _ := imageutil.Open("./test.png")
+	img := mustOpenExampleImage(t, "test.png")
 	results, err := engine.Predict(img)
 	if err != nil {
 		t.Fatalf("prediction failed: %v", err)
@@ -35,7 +35,7 @@ func TestLTDETRDet(t *testing.T) {
 		fmt.Printf("Class: %d, Score: %.2f, Box: %v\n", res.ClassID, res.Score, res.Box)
 		imageutil.DrawThickRectOutline(targetImg, res.Box, color.RGBA{R: 255, G: 0, B: 0, A: 255}, 3)
 	}
-	err = imageutil.Save("ltdetr_det.jpg", targetImg, 50)
+	err = imageutil.Save(exampleArtifactPath("ltdetr_det.jpg"), targetImg, 50)
 	if err != nil {
 		fmt.Printf("failed to save image: %v", err)
 	}
@@ -43,8 +43,8 @@ func TestLTDETRDet(t *testing.T) {
 
 func TestLTDETRDetBatch(t *testing.T) {
 	cfg := ltdetr.DefaultDetConfig()
-	cfg.ModelPath = "../models/ltdetr/dinov3_vits16_ltdetr_coco.onnx"
-	cfg.OnnxRuntimeLibPath = "../lib/onnxruntime.dll"
+	cfg.ModelPath = ExampleModelPath("ltdetr", "dinov3_vits16-ltdetr-coco.onnx")
+	cfg.OnnxRuntimeLibPath = ExampleORTLibraryPath()
 	cfg.DynamicBatch = true
 
 	engine, err := ltdetr.NewDetEngine(cfg)
@@ -53,8 +53,8 @@ func TestLTDETRDetBatch(t *testing.T) {
 	}
 	defer engine.Destroy()
 
-	img1, _ := imageutil.Open("./test.png")
-	img2, _ := imageutil.Open("./ship.jpg")
+	img1 := mustOpenExampleImage(t, "test.png")
+	img2 := mustOpenExampleImage(t, "ship.jpg")
 
 	results, err := engine.PredictBatch([]image.Image{img1, img2})
 	if err != nil {

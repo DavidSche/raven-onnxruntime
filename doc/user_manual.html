@@ -62,6 +62,7 @@ th{background:#f1f5f9;font-weight:600;text-align:left}th,td{padding:10px 14px;bo
 <a class="nav-item" href="#quickstart">Quick Start</a></div>
 <div class="nav-section"><div class="nav-section-title">Architecture</div>
 <a class="nav-item" href="#architecture">Overall Architecture</a>
+<a class="nav-item" href="#rmp">RMP Model Package</a>
 <a class="nav-item" href="#ort-package">ort Low-Level Bindings</a>
 <a class="nav-item" href="#vision-package">vision High-Level API</a></div>
 <div class="nav-section"><div class="nav-section-title">Model Engines</div>
@@ -74,6 +75,7 @@ th{background:#f1f5f9;font-weight:600;text-align:left}th,td{padding:10px 14px;bo
 <a class="nav-item" href="#yolov11">YOLOv11</a>
 <a class="nav-item" href="#sam2">SAM2</a>
 <a class="nav-item" href="#sam3">SAM3 / SAM3.1</a>
+<a class="nav-item" href="#depth_anything3">Depth-Anything-3</a>
 <a class="nav-item" href="#rfdetr">RF-DETR</a>
 <a class="nav-item" href="#ltdetr">LTDETR</a>
 <a class="nav-item" href="#edgecrafter">EdgeCrafter</a>
@@ -122,6 +124,7 @@ th{background:#f1f5f9;font-weight:600;text-align:left}th,td{padding:10px 14px;bo
 │   ├── yolov11/                # YOLOv11 models (det/seg/pose/obb/cls)
 │   ├── sam2/                   # SAM2 image segmentation
 │   ├── sam3/                   # SAM3/SAM3.1 image segmentation
+│   └── depth_anything3/        # Depth-Anything-3 depth estimation
 │   ├── rfdetr/                 # RF-DETR models (det/seg)
 │   ├── ltdetr/                 # LTDETR models (det)
 │   └── edgecrafter/            # EdgeCrafter models (det/seg/pose)
@@ -165,7 +168,7 @@ import (
 
 func main() {
     cfg := yolo26.DefaultDetConfig()
-    cfg.ModelPath = "models/yolo26m.onnx"
+    cfg.ModelPath = "models/yolo26/yolo26m.onnx"
     cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
     cfg.UseCuda = true
 
@@ -224,6 +227,92 @@ func main() {
 <li><strong>vision layer</strong>: Provides high-level wrappers for computer vision models on top of the ort layer. Each model has its own sub-package containing the complete preprocessing, inference, and postprocessing pipeline — ready to use out of the box.</li>
 <li><strong>Global Engine Singleton</strong>: The vision layer initializes a global Engine singleton via <code class="ic">OnnxConfig.New()</code>, loading the DLL only once per process. All models share the same Engine instance.</li>
 </ul>
+
+<h2 id="rmp" class="sa">RMP Model Package Specification</h2>
+<p><strong>RMP (Raven Model Package)</strong> is a model package specification defined by raven-onnxruntime, organizing ONNX sub-models, metadata, and auxiliary files into a self-describing directory structure.</p>
+
+<h3>Design Motivation</h3>
+<p>For multi-sub-model architectures (e.g., Grounded-SAM-2 has 5 ONNX files, SAM3 has 3), requiring the caller to specify each sub-model path individually leads to configuration bloat and violates separation of concerns. RMP makes model packages self-describing — the caller only needs to specify a directory path.</p>
+
+<h3>Directory Structure</h3>
+<pre>grounded-sam2/                 # Model package root
+├── manifest.json              # RMP manifest file (required)
+├── grounded_sam2_gdino_image_encoder.onnx
+├── grounded_sam2_gdino_text_encoder.onnx
+├── grounded_sam2_gdino_detector.onnx
+├── grounded_sam2_sam2_image_encoder.onnx
+├── grounded_sam2_sam2_mask_decoder.onnx
+└── labels.txt                 # (optional) label file</pre>
+
+<h3>manifest.json Format</h3>
+<pre>{
+  "format_version": "1.0",
+  "model_type": "grounded-sam2",
+  "model_version": "1.0.0",
+  "task": "segmentation",
+  "runtime": "onnxruntime",
+  "input_size": [800, 800],
+  "labels": null,
+  "sub_models": {
+    "gdino_image_encoder": "grounded_sam2_gdino_image_encoder.onnx",
+    "gdino_text_encoder": "grounded_sam2_gdino_text_encoder.onnx",
+    "gdino_detector": "grounded_sam2_gdino_detector.onnx",
+    "sam2_image_encoder": "grounded_sam2_sam2_image_encoder.onnx",
+    "sam2_mask_decoder": "grounded_sam2_sam2_mask_decoder.onnx"
+  },
+  "params": {
+    "gdino": { "hidden_dim": 256, "num_queries": 900 },
+    "sam2": { "image_size": 1024, "hidden_dim": 256 }
+  }
+}</pre>
+
+<h4>Field Reference</h4>
+<table>
+<thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code class="ic">format_version</code></td><td>string</td><td>Yes</td><td>Manifest format version, currently "1.0"</td></tr>
+<tr><td><code class="ic">model_type</code></td><td>string</td><td>Yes</td><td>Model type identifier, e.g. "grounded-sam2", "sam3", "yolo26"</td></tr>
+<tr><td><code class="ic">model_version</code></td><td>string</td><td>No</td><td>Model version, e.g. "2.1.0"</td></tr>
+<tr><td><code class="ic">task</code></td><td>string</td><td>No</td><td>Task type: "detect", "segmentation", "classify", "embedding"</td></tr>
+<tr><td><code class="ic">runtime</code></td><td>string</td><td>No</td><td>Runtime type, currently "onnxruntime"</td></tr>
+<tr><td><code class="ic">input_size</code></td><td>[int, int]</td><td>No</td><td>Model input size [H, W]</td></tr>
+<tr><td><code class="ic">labels</code></td><td>string|null</td><td>No</td><td>Label file relative path, e.g. "labels.txt"</td></tr>
+<tr><td><code class="ic">sub_models</code></td><td>object</td><td>Yes</td><td>Sub-model name → ONNX file relative path mapping</td></tr>
+<tr><td><code class="ic">params</code></td><td>object</td><td>No</td><td>Model architecture parameters for auto-configuration</td></tr>
+</tbody></table>
+
+<h3>Usage</h3>
+<p>For multi-sub-model engines (SAM2, SAM3, GroundingDINO, Grounded-SAM-2), the Config only needs <code class="ic">ModelPath</code> pointing to the model package directory. The engine automatically resolves sub-model paths from <code class="ic">manifest.json</code>:</p>
+<pre>// SAM3 example — just specify the directory
+cfg := sam3.DefaultConfig()
+cfg.ModelPath = "./models/sam3"       // directory containing manifest.json
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+cfg.UseCuda = true
+
+engine, err := sam3.NewEngine(cfg)    // auto-discovers sub-models from manifest.json</pre>
+
+<div class="tip"><div class="tip-title">Fallback Mechanism</div><p>If no <code class="ic">manifest.json</code> is found in the directory, the engine falls back to default filenames (e.g., <code class="ic">sam3_image_encoder.onnx</code>), ensuring backward compatibility.</p></div>
+
+<h3>Single-Model vs Multi-Model</h3>
+<table>
+<thead><tr><th>Model Type</th><th>Sub-Models</th><th>Config Field</th><th>Needs Manifest</th></tr></thead>
+<tbody>
+<tr><td>YOLO26 / YOLOv11</td><td>1</td><td><code class="ic">ModelPath</code> → .onnx file</td><td>No (optional)</td></tr>
+<tr><td>RF-DETR / LTDETR</td><td>1</td><td><code class="ic">ModelPath</code> → .onnx file</td><td>No (optional)</td></tr>
+<tr><td>SAM2</td><td>2</td><td><code class="ic">ModelPath</code> → directory</td><td>Recommended</td></tr>
+<tr><td>SAM3</td><td>3</td><td><code class="ic">ModelPath</code> → directory</td><td>Recommended</td></tr>
+<tr><td>GroundingDINO</td><td>3</td><td><code class="ic">ModelPath</code> → directory</td><td>Recommended</td></tr>
+<tr><td>Grounded-SAM-2</td><td>5</td><td><code class="ic">ModelPath</code> → directory</td><td>Required</td></tr>
+</tbody></table>
+
+<h3>Export Script Generation</h3>
+<p>Each model's <code class="ic">export_onnx.py</code> script automatically generates <code class="ic">manifest.json</code> — no manual creation needed:</p>
+<pre>python export_onnx.py
+# Outputs a complete model package directory:
+# grounded-sam2/
+# ├── manifest.json
+# ├── *.onnx
+# └── ...</pre>
 
 <h2 id="ort-package" class="sa">ort Low-Level Bindings</h2>
 <p>The <code class="ic">ort</code> package provides Go bindings for the ONNX Runtime C API, using purego for zero CGO calls.</p>
@@ -371,7 +460,7 @@ session, err := oc.OnnxEngine.NewSession("model.onnx", oc.SessionOptions)</pre>
 <h3 id="yolo26-det" class="sa">Object Detection (DetEngine)</h3>
 <p>Detection output format: <code class="ic">[N, 300, 6]</code>, each row <code class="ic">[x1, y1, x2, y2, score, class_id]</code>.</p>
 <pre>cfg := yolo26.DefaultDetConfig()
-cfg.ModelPath = "models/yolo26m.onnx"
+cfg.ModelPath = "models/yolo26/yolo26m.onnx"
 cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 cfg.UseCuda = true
 
@@ -401,7 +490,7 @@ type DetResult struct {
 <h3 id="yolo26-seg" class="sa">Instance Segmentation (SegEngine)</h3>
 <p>The segmentation model has two outputs: <code class="ic">[1, 300, 38]</code> (detection + mask coefficients) and <code class="ic">[1, 32, 160, 160]</code> (mask prototypes).</p>
 <pre>cfg := yolo26.DefaultSegConfig()
-cfg.ModelPath = "models/yolo26s-seg.onnx"
+cfg.ModelPath = "models/yolo26/yolo26m-seg.onnx"
 cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 
 engine, err := yolo26.NewSegEngine(cfg)
@@ -427,7 +516,7 @@ type SegResult struct {
 <h3 id="yolo26-pose" class="sa">Pose Estimation (PoseEngine)</h3>
 <p>Pose model output format: <code class="ic">[N, 300, 57]</code> (6 base attributes + 17×3 keypoints), supporting batch inference and channel-first format auto-detection.</p>
 <pre>cfg := yolo26.DefaultPoseConfig()
-cfg.ModelPath = "models/yolo26m-pose.onnx"
+cfg.ModelPath = "models/yolo26/yolo26m-pose.onnx"
 cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 cfg.NumKeyPoints = 17
 
@@ -457,7 +546,7 @@ type KeyPoint struct {
 <h3 id="yolo26-obb" class="sa">OBB Detection (OBBEngine)</h3>
 <p>OBB output format: <code class="ic">[1, 300, 7]</code>, each row <code class="ic">[cx, cy, w, h, score, class_id, angle]</code>.</p>
 <pre>cfg := yolo26.DefaultOBBConfig()
-cfg.ModelPath = "models/yolo26m-obb.onnx"
+cfg.ModelPath = "models/yolo26/yolo26m-obb.onnx"
 cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 cfg.InputSize = 1024
 cfg.NumClasses = 15
@@ -485,7 +574,7 @@ type OBBResult struct {
 <h3 id="yolo26-cls" class="sa">Image Classification (ClsEngine)</h3>
 <p>The classification model input size is 224×224, outputting <code class="ic">[1, 1000]</code> logits.</p>
 <pre>cfg := yolo26.DefaultClsConfig()
-cfg.ModelPath = "models/yolo26m-cls.onnx"
+cfg.ModelPath = "models/yolo26/yolo26-cls.onnx"
 cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 
 engine, err := yolo26.NewClsEngine(cfg)
@@ -518,7 +607,7 @@ type ClassResult struct {
 <pre>import "github.com/DavidSche/raven-onnxruntime/vision/yolov11"
 
 cfg := yolov11.DefaultDetConfig()
-cfg.ModelPath = "models/yolo11m.onnx"
+cfg.ModelPath = "models/yolo11/yolo11m.onnx"
 cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 
 engine, err := yolov11.NewDetEngine(cfg)
@@ -541,8 +630,7 @@ results, err := engine.Predict(img)</pre>
 
 <pre>config := sam2.Config{
     OnnxRuntimeLibPath: "./lib/onnxruntime.dll",
-    EncodeModelPath:    "models/sam2/vision_encoder.onnx",
-    DecodeModelPath:    "models/sam2/prompt_encoder_mask_decoder.onnx",
+    ModelPath:          "models/sam2",  // directory containing manifest.json + ONNX sub-models
 }
 
 engine, err := sam2.NewEngine(config)
@@ -583,9 +671,7 @@ result, err := imgCtx.DecodeRaw(points)
 
 <pre>config := sam3.Config{
     OnnxRuntimeLibPath: "./lib/onnxruntime.dll",
-    VisionModelPath:    "models/sam3_vision_encoder.onnx",
-    TextModelPath:      "models/sam3_text_encoder.onnx",
-    DecoderModelPath:   "models/sam3_decoder.onnx",
+    ModelPath:          "models/sam3",  // directory containing manifest.json + ONNX sub-models
 }
 
 engine, err := sam3.NewEngine(config)
@@ -622,6 +708,68 @@ maskImg, score, err := imgCtx.Decode(points)</pre>
 <tr><td><code class="ic">LabelForeground</code></td><td>1</td><td>Foreground / inclusion</td></tr>
 <tr><td><code class="ic">LabelNegBox</code></td><td>0</td><td>Negative box (exclusion region)</td></tr>
 <tr><td><code class="ic">LabelPosBox</code></td><td>1</td><td>Positive box (inclusion region)</td></tr>
+</tbody></table>
+
+<h2 id="depth_anything3" class="sa">Depth-Anything-3</h2>
+<p>Depth-Anything-3 is a monocular depth estimation model from the Depth-Anything series, supporting multiple model variants (Small/Base/Large/Giant). It predicts a dense depth map and confidence map from a single RGB image. Package path: <code class="ic">github.com/DavidSche/raven-onnxruntime/vision/depth_anything3</code></p>
+
+<h3>Config</h3>
+<pre>type Config struct {
+    ModelPath          string // ONNX model path
+    OnnxRuntimeLibPath string // ONNX Runtime shared library path
+    InputHeight        int    // Input height (must be multiple of 14, default 518)
+    InputWidth         int    // Input width (must be multiple of 14, default 518)
+    UseCuda            bool   // Enable CUDA
+    NumThreads         int    // ONNX thread count
+    EnableCpuMemArena bool   // Enable ONNX memory pool
+    ApiVersion         ort.ApiVersion
+}</pre>
+
+<h3>Usage</h3>
+<pre>cfg := depth_anything3.DefaultConfig()
+cfg.ModelPath = "models/da3-small/da3-small_518x518.onnx"
+cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
+
+engine, err := depth_anything3.NewEngine(cfg)
+if err != nil { panic(err) }
+defer engine.Destroy()
+
+img, _ := imageutil.Open("test.png")
+result, err := engine.Predict(img)
+
+// result.Depth — depth map []float32 (H×W), larger = closer
+// result.Confidence — confidence map []float32 (H×W)
+// result.Width, result.Height — depth map dimensions
+
+// Visualization
+colorImg := depth_anything3.DepthToColormap(result)        // Pseudo-color (turbo)
+heatmapImg := depth_anything3.DepthToHeatmap(result)        // Heatmap (blue→red)
+overlayImg := depth_anything3.DrawDepthOverlay(img, result, 0.5) // Blend with original
+confImg := depth_anything3.DrawDepthWithConfidence(result, 0.3)  // Confidence-filtered</pre>
+
+<h3>Model Variants</h3>
+<table>
+<thead><tr><th>Variant</th><th>Config Name</th><th>Backbone</th><th>Default Input</th></tr></thead>
+<tbody>
+<tr><td>DA3-SMALL</td><td><code class="ic">da3-small</code></td><td>DinoV2-S/14</td><td>518×518</td></tr>
+<tr><td>DA3-BASE</td><td><code class="ic">da3-base</code></td><td>DinoV2-B/14</td><td>518×518</td></tr>
+<tr><td>DA3-LARGE</td><td><code class="ic">da3-large</code></td><td>DinoV2-L/14</td><td>518×518</td></tr>
+<tr><td>DA3-GIANT</td><td><code class="ic">da3-giant</code></td><td>DinoV2-G/14</td><td>518×518</td></tr>
+</tbody></table>
+
+<h3>Preprocessing</h3>
+<ul>
+<li><strong>Normalization</strong>: ImageNet mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]</li>
+<li><strong>Resize</strong>: Upper-bound resize by long edge, dimensions rounded to multiples of 14</li>
+<li><strong>Input format</strong>: (B, 1, 3, H, W) — single-frame monocular input</li>
+</ul>
+
+<h3>Output</h3>
+<table>
+<thead><tr><th>Output Name</th><th>Shape</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code class="ic">depth</code></td><td>(B, 1, H, W)</td><td>Predicted depth map (relative depth, larger = closer)</td></tr>
+<tr><td><code class="ic">depth_conf</code></td><td>(B, 1, H, W)</td><td>Depth confidence map</td></tr>
 </tbody></table>
 
 <h2 id="rfdetr" class="sa">RF-DETR</h2>
@@ -711,7 +859,7 @@ type SegResult struct {
 
 <h3>Object Detection (DetEngine)</h3>
 <pre>cfg := ltdetr.DefaultDetConfig()
-cfg.ModelPath = "models/ltdetr/dinov3_vits16_ltdetr_coco.onnx"
+cfg.ModelPath = "models/ltdetr/dinov3_vits16-ltdetr-coco.onnx"
 cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 
 engine, err := ltdetr.NewDetEngine(cfg)
@@ -756,7 +904,7 @@ type DetResult struct {
 
 <h3 id="edgecrafter-det" class="sa">Object Detection (DetEngine)</h3>
 <pre>cfg := edgecrafter.DefaultDetConfig()
-cfg.ModelPath = "models/edgecrafter/ecdet-s.onnx"
+cfg.ModelPath = "models/ecdet/ecdet_s.onnx"
 cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 
 engine, err := edgecrafter.NewDetEngine(cfg)
@@ -777,7 +925,7 @@ type DetResult struct {
 
 <h3 id="edgecrafter-seg" class="sa">Instance Segmentation (SegEngine)</h3>
 <pre>cfg := edgecrafter.DefaultSegConfig()
-cfg.ModelPath = "models/edgecrafter/ecseg-s.onnx"
+cfg.ModelPath = "models/ecdet/ecseg_s.onnx"
 cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 
 engine, err := edgecrafter.NewSegEngine(cfg)
@@ -801,7 +949,7 @@ type SegResult struct {
 
 <h3 id="edgecrafter-pose" class="sa">Pose Estimation (PoseEngine)</h3>
 <pre>cfg := edgecrafter.DefaultPoseConfig()
-cfg.ModelPath = "models/edgecrafter/ecpose-s.onnx"
+cfg.ModelPath = "models/ecdet/ecpose_s.onnx"
 cfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 
 engine, err := edgecrafter.NewPoseEngine(cfg)
@@ -842,6 +990,7 @@ type KeyPoint struct {
 <tr><td>YOLO26</td><td>Segmentation / OBB / Classification</td><td>—</td><td>Single-frame Predict only</td></tr>
 <tr><td>YOLOv11</td><td>All</td><td>—</td><td>Single-frame Predict only</td></tr>
 <tr><td>SAM2 / SAM3</td><td>Segmentation</td><td>—</td><td>Encoder-decoder architecture, not suitable for batching</td></tr>
+<tr><td>Depth-Anything-3</td><td>Depth Estimation</td><td>—</td><td>Single-frame monocular depth estimation</td></tr>
 </tbody></table>
 
 <h3>Usage Example</h3>
@@ -864,7 +1013,7 @@ batchResults, err := rfdetrEngine.PredictBatch(imgs)</pre>
 <p>You can combine detection and segmentation models to implement a "detect then segment" pipeline. Typical scenario: YOLO detects objects → SAM performs precise segmentation.</p>
 
 <pre>yoloCfg := yolo26.DefaultDetConfig()
-yoloCfg.ModelPath = "models/yolo26m.onnx"
+yoloCfg.ModelPath = "models/yolo26/yolo26m.onnx"
 yoloCfg.OnnxRuntimeLibPath = "./lib/onnxruntime.dll"
 
 yoloEngine, err := yolo26.NewDetEngine(yoloCfg)
@@ -884,9 +1033,7 @@ for _, res := range yoloResults {
 
 samCfg := sam3.Config{
     OnnxRuntimeLibPath: "./lib/onnxruntime.dll",
-    VisionModelPath:    "models/sam3_vision_encoder.onnx",
-    TextModelPath:      "models/sam3_text_encoder.onnx",
-    DecoderModelPath:   "models/sam3_decoder.onnx",
+    ModelPath:          "models/sam3",  // directory containing manifest.json + ONNX sub-models
 }
 
 samEngine, err := sam3.NewEngine(samCfg)
@@ -1069,6 +1216,7 @@ cfg.ApiVersion = ort.ApiVersion23</pre>
 <tr><td>YOLOv11</td><td>vision/yolov11</td><td>ClsEngine</td><td>Image Classification</td><td>❌</td></tr>
 <tr><td>SAM2</td><td>vision/sam2</td><td>Engine</td><td>Image Segmentation</td><td>❌</td></tr>
 <tr><td>SAM3</td><td>vision/sam3</td><td>Engine</td><td>Image Segmentation</td><td>❌</td></tr>
+<tr><td>Depth-Anything-3</td><td>vision/depth_anything3</td><td>Engine</td><td>Depth Estimation</td><td>❌</td></tr>
 <tr><td>RF-DETR</td><td>vision/rfdetr</td><td>DetEngine</td><td>Object Detection</td><td>✅</td></tr>
 <tr><td>RF-DETR</td><td>vision/rfdetr</td><td>SegEngine</td><td>Instance Segmentation</td><td>✅</td></tr>
 <tr><td>LTDETR</td><td>vision/ltdetr</td><td>DetEngine</td><td>Object Detection</td><td>✅</td></tr>
