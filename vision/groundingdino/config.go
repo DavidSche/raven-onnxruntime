@@ -6,6 +6,7 @@ import (
 
 	"github.com/DavidSche/raven-onnxruntime/internal/modelpath"
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
+	"github.com/DavidSche/raven-onnxruntime/vision"
 	"github.com/DavidSche/raven-onnxruntime/vision/manifest"
 )
 
@@ -26,6 +27,7 @@ type Config struct {
 	UseCuda           bool
 	NumThreads        int
 	EnableCpuMemArena bool
+	PreprocessConfig  vision.PreprocessConfig
 	ApiVersion        ort.ApiVersion
 }
 
@@ -33,6 +35,7 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		OnnxRuntimeLibPath: ort.DefaultLibraryPath(),
+		PreprocessConfig:   vision.DefaultImageNetPreprocessConfig(),
 		ModelPath:          modelpath.ModelPath("groundingdino"),
 		ConfThreshold:      0.35,
 		InputSize:          800,

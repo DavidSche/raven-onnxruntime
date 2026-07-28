@@ -3,6 +3,7 @@ package ortlog
 import (
 	"log"
 	"os"
+	"sync"
 )
 
 // Logger defines a structured logging interface (key-value style, compatible with zap/slog/logrus)
@@ -13,19 +14,28 @@ type Logger interface {
 	Errorw(msg string, keysAndValues ...interface{})
 }
 
-var globalLogger Logger = newFallbackLogger()
+var (
+	globalLogger Logger = newFallbackLogger()
+	loggerMu     sync.RWMutex
+)
 
 // SetLogger replaces the global Logger (e.g. inject zap.SugaredLogger).
 // Passing nil is ignored (keeps the current Logger).
 func SetLogger(l Logger) {
-	if l != nil {
-		globalLogger = l
+	if l == nil {
+		return
 	}
+	loggerMu.Lock()
+	globalLogger = l
+	loggerMu.Unlock()
 }
 
 // L returns the current global Logger.
 func L() Logger {
-	return globalLogger
+	loggerMu.RLock()
+	l := globalLogger
+	loggerMu.RUnlock()
+	return l
 }
 
 // fallbackLogger is the built-in default implementation using the standard library log.
@@ -64,17 +74,17 @@ func (f *fallbackLogger) Errorw(msg string, keysAndValues ...interface{}) {
 }
 
 func Debugw(msg string, keysAndValues ...interface{}) {
-	globalLogger.Debugw(msg, keysAndValues...)
+	L().Debugw(msg, keysAndValues...)
 }
 
 func Infow(msg string, keysAndValues ...interface{}) {
-	globalLogger.Infow(msg, keysAndValues...)
+	L().Infow(msg, keysAndValues...)
 }
 
 func Warnw(msg string, keysAndValues ...interface{}) {
-	globalLogger.Warnw(msg, keysAndValues...)
+	L().Warnw(msg, keysAndValues...)
 }
 
 func Errorw(msg string, keysAndValues ...interface{}) {
-	globalLogger.Errorw(msg, keysAndValues...)
+	L().Errorw(msg, keysAndValues...)
 }

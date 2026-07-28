@@ -12,6 +12,7 @@ import (
 	"github.com/DavidSche/raven-onnxruntime/ort/ortlog"
 	"github.com/DavidSche/raven-onnxruntime/vision"
 	"github.com/DavidSche/raven-onnxruntime/vision/manifest"
+	"github.com/DavidSche/raven-onnxruntime/vision/tokenizer"
 	"github.com/up-zero/gotool/convertutil"
 )
 
@@ -148,7 +149,7 @@ func (e *DetEngine) Predict(img image.Image, captions []string) ([]DetResult, er
 
 	// 1. 图像编码
 	preprocessStart := time.Now()
-	inputTensor, params, err := preprocessImage(e.imageEncoder, img, e.config.InputSize)
+	inputTensor, params, err := preprocessImage(e.imageEncoder, img, e.config.InputSize, e.config.PreprocessConfig)
 	if err != nil {
 		return nil, fmt.Errorf("image preprocess failed: %w", err)
 	}
@@ -227,25 +228,23 @@ func (e *DetEngine) runImageEncoder(inputTensor *ort.Value) (map[string]*ort.Val
 
 // runTextEncoder 运行文本编码器
 func (e *DetEngine) runTextEncoder(captions []string) (map[string]*ort.Value, error) {
-	inputIds, attentionMask, tokenTypeIds, textSelfAttnMasks, positionIds, err :=
-		tokenizeCaptions(e.textEncoder, captions, e.config.MaxTextLen)
+	bundle, err := tokenizer.Acquire(e.textEncoder, captions, e.config.MaxTextLen)
 	if err != nil {
 		return nil, fmt.Errorf("tokenization failed: %w", err)
 	}
-	defer func() {
-		inputIds.Destroy()
-		attentionMask.Destroy()
-		tokenTypeIds.Destroy()
-		textSelfAttnMasks.Destroy()
-		positionIds.Destroy()
-	}()
+	defer bundle.Destroy()
+	if bundle.Source == tokenizer.SourcePlaceholder {
+		ortlog.Warnw("groundingdino using placeholder tokenizer fallback",
+			"modelPath", e.config.ModelPath,
+			"maxTextLen", e.config.MaxTextLen)
+	}
 
 	inputValues := map[string]*ort.Value{
-		"input_ids":                 inputIds,
-		"attention_mask":            attentionMask,
-		"token_type_ids":            tokenTypeIds,
-		"text_self_attention_masks": textSelfAttnMasks,
-		"position_ids":              positionIds,
+		"input_ids":                 bundle.InputIds,
+		"attention_mask":            bundle.AttentionMask,
+		"token_type_ids":            bundle.TokenTypeIds,
+		"text_self_attention_masks": bundle.TextSelfAttnMasks,
+		"position_ids":              bundle.PositionIds,
 	}
 
 	outputValues, err := e.textEncoder.Run(inputValues)

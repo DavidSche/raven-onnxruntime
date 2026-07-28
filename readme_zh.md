@@ -58,6 +58,8 @@
 | SAM3 / SAM3H / SAM3.1 | 图像分割 | `vision/sam3` | — | ✅ |
 | Depth-Anything-3 | 深度估计 | `vision/depth_anything3` | — | ✅ |
 
+> 注意：`vision/groundingdino` 和 `vision/groundedsam2` 当前提供的是本地测试用的轻量级 fallback tokenizer，属于按字符映射的占位实现，不是生产级 BERT tokenizer。正式的开放词汇场景建议先用 Python 预先 tokenize，再加载缓存的 tokenization 文件。
+
 ## 项目结构
 
 ```

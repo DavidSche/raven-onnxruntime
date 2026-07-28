@@ -50,7 +50,7 @@ func (e *SegEngine) Destroy() {
 // Predict executes segmentation inference
 func (e *SegEngine) Predict(img image.Image) ([]SegResult, error) {
 	// preprocess
-	inputTensor, params, err := preprocess(img, e.config.InputSize, e.session)
+	inputTensor, params, err := preprocess(img, e.config.InputSize, e.session, e.config.PreprocessConfig)
 	if err != nil {
 		return nil, fmt.Errorf("preprocess failed: %w", err)
 	}
@@ -103,20 +103,46 @@ func (e *SegEngine) postprocess(out0, out1 *ort.Value, params imageParams) ([]Se
 	if err != nil {
 		return nil, fmt.Errorf("failed to get mask protos: %w", err)
 	}
+	shape0, _ := out0.GetShape()
 	shape1, _ := out1.GetShape()
 	protoC, protoH, protoW := int(shape1[1]), int(shape1[2]), int(shape1[3])
 
+	// output0: Detections [1, numDetections, dimTotal]
+	// Default to the conventional YOLO26-seg layout (300 detections, 38 dims,
+	// mask coefficients starting at index 6) but prefer the real shape when the
+	// runtime exposes it so we are not hard-coded to a single model.
 	const (
-		numDetections = 300
-		dimTotal      = 38
-		indexMask     = 6
+		defaultNumDetections = 300
+		defaultDimTotal      = 38
+		indexMask            = 6
+		defaultMaskCoeffs    = 32
 	)
+	numDetections := defaultNumDetections
+	dimTotal := defaultDimTotal
+	if len(shape0) >= 3 {
+		if shape0[1] > 0 {
+			numDetections = int(shape0[1])
+		}
+		if shape0[2] > 0 {
+			dimTotal = int(shape0[2])
+		}
+	}
+	// number of mask coefficients carried per detection
+	maskCoeffsLen := dimTotal - indexMask
+	if maskCoeffsLen <= 0 || maskCoeffsLen > defaultMaskCoeffs {
+		maskCoeffsLen = defaultMaskCoeffs
+	}
 
 	var results []SegResult
 
 	// [x1, y1, x2, y2, score, class, mask_coeffs...]
 	for i := 0; i < numDetections; i++ {
 		offset := i * dimTotal
+
+		// bounds check: ensure the whole detection row is within data0
+		if offset+dimTotal > len(data0) {
+			break
+		}
 
 		score := data0[offset+4]
 		if score < e.config.ConfThreshold {
@@ -130,14 +156,15 @@ func (e *SegEngine) postprocess(out0, out1 *ort.Value, params imageParams) ([]Se
 		classID := int(data0[offset+5])
 
 		// map back to original image
-		origX1 := max(0, int(x1/params.scale))
-		origY1 := max(0, int(y1/params.scale))
-		origX2 := min(params.origW, int(x2/params.scale))
-		origY2 := min(params.origH, int(y2/params.scale))
+		origX1 := max(0, int((x1-float32(params.padX))/params.scale))
+		origY1 := max(0, int((y1-float32(params.padY))/params.scale))
+		origX2 := min(params.origW, int((x2-float32(params.padX))/params.scale))
+		origY2 := min(params.origH, int((y2-float32(params.padY))/params.scale))
 		origBox := image.Rect(origX1, origY1, origX2, origY2)
 
-		// extract 32 mask coefficients
-		coeffs := data0[offset+indexMask : offset+indexMask+32]
+		// extract mask coefficients (bounded by both the row layout and the
+		// prototype channel count to avoid out-of-range access in decodeMask)
+		coeffs := data0[offset+indexMask : offset+indexMask+maskCoeffsLen]
 
 		// decode mask
 		mask := e.decodeMask(origBox, coeffs, data1, protoC, protoH, protoW, params)

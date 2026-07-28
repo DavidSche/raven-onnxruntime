@@ -82,7 +82,7 @@ func (e *DetEngine) Predict(img image.Image) ([]DetResult, error) {
 	startedAt := time.Now()
 
 	preprocessStart := time.Now()
-	inputTensor, params, err := preprocess(img, e.config.InputSize, e.session)
+	inputTensor, params, err := preprocess(img, e.config.InputSize, e.session, e.config.PreprocessConfig)
 	if err != nil {
 		return nil, fmt.Errorf("preprocess failed: %w", err)
 	}
@@ -103,6 +103,7 @@ func (e *DetEngine) Predict(img image.Image) ([]DetResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inference failed: %w", err)
 	}
+	defer ort.DestroyValues(outputValues)
 	runElapsed := time.Since(runStart)
 
 	var boxesName, logitsName string
@@ -206,7 +207,7 @@ func (e *DetEngine) PredictBatch(imgs []image.Image) ([][]DetResult, error) {
 	startedAt := time.Now()
 
 	preprocessStart := time.Now()
-	inputTensor, paramsList, err := preprocessBatch(imgs, e.config.InputSize, e.session)
+	inputTensor, paramsList, err := preprocessBatch(imgs, e.config.InputSize, e.session, e.config.PreprocessConfig)
 	if err != nil {
 		return nil, fmt.Errorf("preprocess failed: %w", err)
 	}
@@ -227,6 +228,7 @@ func (e *DetEngine) PredictBatch(imgs []image.Image) ([][]DetResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inference failed: %w", err)
 	}
+	defer ort.DestroyValues(outputValues)
 	runElapsed := time.Since(runStart)
 
 	var boxesName, logitsName string

@@ -52,9 +52,11 @@ func (d *TextDrawer) SetSize(fontSize float64) error {
 		return nil
 	}
 
-	// release old Face
+	// release old Face and immediately clear the reference so that, if
+	// opentype.NewFace fails below, d.face does not point to a closed Face.
 	if d.face != nil {
 		d.face.Close()
+		d.face = nil
 	}
 
 	nf, err := opentype.NewFace(d.font, &opentype.FaceOptions{

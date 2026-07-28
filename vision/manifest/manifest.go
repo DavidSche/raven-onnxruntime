@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Manifest represents a RMP manifest.json file
@@ -79,11 +80,18 @@ func Load(modelPath string) (*Manifest, error) {
 
 // SubModelPath returns the absolute path for a named sub-model.
 // The name corresponds to a key in manifest.json's "sub_models" field.
+// rel is sanitized to prevent path traversal outside modelDir.
 func (m *Manifest) SubModelPath(modelDir, name string) string {
-	if rel, ok := m.SubModels[name]; ok {
-		return filepath.Join(modelDir, rel)
+	rel, ok := m.SubModels[name]
+	if !ok {
+		return ""
 	}
-	return ""
+	cleanRel := filepath.Clean(rel)
+	if strings.HasPrefix(cleanRel, "..") || filepath.IsAbs(cleanRel) {
+		// reject parent-directory traversal and absolute paths
+		return ""
+	}
+	return filepath.Join(modelDir, cleanRel)
 }
 
 // ParamInt returns an integer parameter from the params section.
@@ -158,7 +166,7 @@ func (m *Manifest) ParamMap(key string) map[string]any {
 
 // InputSizeAt returns the input size at the given dimension index.
 func (m *Manifest) InputSizeAt(dim int, defaultVal int) int {
-	if m.InputSize == nil || dim >= len(m.InputSize) {
+	if m.InputSize == nil || dim < 0 || dim >= len(m.InputSize) {
 		return defaultVal
 	}
 	return m.InputSize[dim]

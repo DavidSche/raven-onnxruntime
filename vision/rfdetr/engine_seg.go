@@ -151,7 +151,7 @@ func (e *SegEngine) Destroy() {
 }
 
 func (e *SegEngine) Predict(img image.Image) ([]SegResult, error) {
-	inputTensor, params, err := preprocess(img, e.config.InputSize, e.session)
+	inputTensor, params, err := preprocess(img, e.config.InputSize, e.session, e.config.PreprocessConfig)
 	if err != nil {
 		return nil, fmt.Errorf("preprocess failed: %w", err)
 	}
@@ -169,6 +169,7 @@ func (e *SegEngine) Predict(img image.Image) ([]SegResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inference failed: %w", err)
 	}
+	defer ort.DestroyValues(outputValues)
 
 	boxesOut, logitsOut, masksOut, err := resolveSegOutputs(outputValues)
 	if err != nil {
@@ -331,7 +332,7 @@ func (e *SegEngine) PredictBatch(imgs []image.Image) ([][]SegResult, error) {
 	}
 
 	preprocessStart := time.Now()
-	inputTensor, paramsList, err := preprocessBatch(imgs, e.config.InputSize, e.session)
+	inputTensor, paramsList, err := preprocessBatch(imgs, e.config.InputSize, e.session, e.config.PreprocessConfig)
 	if err != nil {
 		return nil, fmt.Errorf("preprocess failed: %w", err)
 	}
@@ -351,6 +352,7 @@ func (e *SegEngine) PredictBatch(imgs []image.Image) ([][]SegResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inference failed: %w", err)
 	}
+	defer ort.DestroyValues(outputValues)
 	runElapsed := time.Since(runStart)
 
 	boxesOut, logitsOut, masksOut, err := resolveSegOutputs(outputValues)

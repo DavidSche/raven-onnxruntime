@@ -5,6 +5,7 @@ import (
 
 	"github.com/DavidSche/raven-onnxruntime/internal/modelpath"
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
+	"github.com/DavidSche/raven-onnxruntime/vision"
 )
 
 // Config holds engine initialization parameters for EdgeCrafter models.
@@ -29,12 +30,14 @@ type Config struct {
 	NumThreads        int
 	EnableCpuMemArena bool
 	ApiVersion        ort.ApiVersion
+	PreprocessConfig  vision.PreprocessConfig
 }
 
 // DefaultConfig returns default configuration.
 func DefaultConfig() Config {
 	return Config{
 		OnnxRuntimeLibPath: ort.DefaultLibraryPath(),
+		PreprocessConfig:   vision.DefaultImageNetPreprocessConfig(),
 		ConfThreshold:      0.5,
 		IOUThreshold:       0.45,
 		MaskThreshold:      0.5,
@@ -49,21 +52,21 @@ func DefaultConfig() Config {
 // DefaultDetConfig returns default detection configuration.
 func DefaultDetConfig() Config {
 	cfg := DefaultConfig()
-	cfg.ModelPath = modelpath.ModelPath("ecdet", "ecdet_s.onnx")
+	cfg.ModelPath = modelpath.ModelPath("ecdet", modelpath.EdgeCrafterDetFile)
 	return cfg
 }
 
 // DefaultSegConfig returns default segmentation configuration.
 func DefaultSegConfig() Config {
 	cfg := DefaultConfig()
-	cfg.ModelPath = modelpath.ModelPath("ecdet", "ecseg_s.onnx")
+	cfg.ModelPath = modelpath.ModelPath("ecdet", modelpath.EdgeCrafterSegFile)
 	return cfg
 }
 
 // DefaultPoseConfig returns default pose configuration.
 func DefaultPoseConfig() Config {
 	cfg := DefaultConfig()
-	cfg.ModelPath = modelpath.ModelPath("ecdet", "ecpose_s.onnx")
+	cfg.ModelPath = modelpath.ModelPath("ecdet", modelpath.EdgeCrafterPoseFile)
 	cfg.NumClasses = 2
 	return cfg
 }

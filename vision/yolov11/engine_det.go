@@ -50,7 +50,7 @@ func (e *DetEngine) Destroy() {
 // Predict executes detection inference
 func (e *DetEngine) Predict(img image.Image) ([]DetResult, error) {
 	// preprocess
-	inputTensor, params, err := preprocess(img, e.config.InputSize, e.session)
+	inputTensor, params, err := preprocess(img, e.config.InputSize, e.session, e.config.PreprocessConfig)
 	if err != nil {
 		return nil, fmt.Errorf("preprocess failed: %w", err)
 	}
@@ -70,6 +70,7 @@ func (e *DetEngine) Predict(img image.Image) ([]DetResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inference failed: %w", err)
 	}
+	defer ort.DestroyValues(outputValues)
 
 	// get first output (compatible with different output names)
 	if len(e.session.OutputNames) == 0 {
@@ -156,10 +157,10 @@ func (e *DetEngine) parseCandidates(data []float32, channels, anchors int, param
 		y1 := cy - h/2
 		x2 := cx + w/2
 		y2 := cy + h/2
-		origX1 := max(0, int(x1/params.scale))
-		origY1 := max(0, int(y1/params.scale))
-		origX2 := min(params.origW, int(x2/params.scale))
-		origY2 := min(params.origH, int(y2/params.scale))
+		origX1 := max(0, int((x1-float32(params.padX))/params.scale))
+		origY1 := max(0, int((y1-float32(params.padY))/params.scale))
+		origX2 := min(params.origW, int((x2-float32(params.padX))/params.scale))
+		origY2 := min(params.origH, int((y2-float32(params.padY))/params.scale))
 
 		cands = append(cands, candidate{
 			box:     [4]float32{x1, y1, x2, y2},

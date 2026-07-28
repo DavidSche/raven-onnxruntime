@@ -85,6 +85,9 @@ func (e *Engine) EncodeImage(img image.Image) (*ImageContext, error) {
 	// preprocess
 	bounds := img.Bounds()
 	origW, origH := bounds.Dx(), bounds.Dy()
+	if origW == 0 || origH == 0 {
+		return nil, fmt.Errorf("invalid image dimensions: %dx%d", origW, origH)
+	}
 
 	scale := float32(inputSize) / float32(max(origW, origH))
 	newW := int(float32(origW) * scale)
@@ -225,6 +228,9 @@ func (ctx *ImageContext) DecodeRaw(points []Point) (*Result, error) {
 	pixelsPerMask := 256 * 256
 	start := bestIdx * pixelsPerMask
 	end := start + pixelsPerMask
+	if end > len(rawMasks) {
+		return nil, fmt.Errorf("mask index out of range: start=%d end=%d len=%d", start, end, len(rawMasks))
+	}
 	bestMaskLogits := rawMasks[start:end]
 
 	validMaskW := int(float32(ctx.newW) / 4.0)

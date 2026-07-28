@@ -5,6 +5,7 @@ import (
 
 	"github.com/DavidSche/raven-onnxruntime/internal/modelpath"
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
+	"github.com/DavidSche/raven-onnxruntime/vision"
 )
 
 // Config holds engine initialization parameters
@@ -24,29 +25,20 @@ type Config struct {
 	NumKeyPoints  int // default 17
 
 	// optional parameters
-	UseCuda           bool           // (optional) enable CUDA
-	NumThreads        int            // (optional) ONNX thread count, default determined by CPU cores
-	EnableCpuMemArena bool           // (optional) enable ONNX memory pool
-	ApiVersion        ort.ApiVersion // (optional) ONNX Runtime C API version, default ort.DefaultApiVersion
-}
+	UseCuda           bool
+	NumThreads        int
+	EnableCpuMemArena bool
+	ApiVersion        ort.ApiVersion
 
-// DetResult holds object detection result
-type DetResult struct {
-	// Class ID, e.g.:
-	//	0: person
-	//  1: bicycle
-	//  2: car
-	// - For full mapping, see:
-	//	https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/datasets/coco.yaml
-	ClassID int
-	Score   float32
-	Box     image.Rectangle // detection box
+	// preprocessing configuration
+	PreprocessConfig vision.PreprocessConfig
 }
 
 // DefaultConfig returns default configuration
 func DefaultConfig() Config {
 	return Config{
 		OnnxRuntimeLibPath: ort.DefaultLibraryPath(),
+		PreprocessConfig:   vision.DefaultPreprocessConfig(),
 		ConfThreshold:      0.45,
 		IOUThreshold:       0.45,
 		MaskThreshold:      0.50,
@@ -60,7 +52,39 @@ func DefaultConfig() Config {
 // DefaultDetConfig returns default detection configuration
 func DefaultDetConfig() Config {
 	cfg := DefaultConfig()
-	cfg.ModelPath = modelpath.ModelPath("yolo26", "yolo26m.onnx")
+	cfg.ModelPath = modelpath.ModelPath("yolo26", modelpath.YOLO26DetFile)
+	return cfg
+}
+
+// DefaultSegConfig returns default segmentation configuration
+func DefaultSegConfig() Config {
+	cfg := DefaultConfig()
+	cfg.ModelPath = modelpath.ModelPath("yolo26", modelpath.YOLO26SegFile)
+	return cfg
+}
+
+// DefaultClsConfig returns default classification configuration
+func DefaultClsConfig() Config {
+	cfg := DefaultConfig()
+	cfg.InputSize = 224
+	cfg.ModelPath = modelpath.ModelPath("yolo26", modelpath.YOLO26ClsFile)
+	return cfg
+}
+
+// DefaultPoseConfig returns default pose estimation configuration
+func DefaultPoseConfig() Config {
+	cfg := DefaultConfig()
+	cfg.NumClasses = 1
+	cfg.ModelPath = modelpath.ModelPath("yolo26", modelpath.YOLO26PoseFile)
+	return cfg
+}
+
+// DefaultOBBConfig returns default OBB configuration
+func DefaultOBBConfig() Config {
+	cfg := DefaultConfig()
+	cfg.InputSize = 1024
+	cfg.NumClasses = 15
+	cfg.ModelPath = modelpath.ModelPath("yolo26", modelpath.YOLO26OBBFile)
 	return cfg
 }
 
@@ -68,69 +92,53 @@ func DefaultDetConfig() Config {
 type imageParams struct {
 	origW, origH int
 	scale        float32
+	padX, padY   int // letterbox padding in model coordinate space
 }
 
-// DefaultSegConfig returns default segmentation configuration
-func DefaultSegConfig() Config {
-	cfg := DefaultConfig()
-	cfg.ModelPath = modelpath.ModelPath("yolo26", "yolo26m-seg.onnx")
-	return cfg
+// candidate holds a detection candidate
+type candidate struct {
+	box          [4]float32
+	origBox      image.Rectangle
+	score        float32
+	classID      int
+	maskCoeffs   []float32
+	rawKeyPoints []float32
+	angle        float32
+}
+
+// DetResult holds object detection result
+type DetResult struct {
+	ClassID int
+	Score   float32
+	Box     image.Rectangle
 }
 
 // SegResult holds segmentation result
 type SegResult struct {
-	// Class ID, e.g.:
-	//	0: person
-	//  1: bicycle
-	//  2: car
-	// For full mapping, see:
-	//	https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/datasets/coco.yaml
 	ClassID int
 	Score   float32
-	Box     image.Rectangle // segmented rectangular region
-	Mask    *image.Gray     // decoded Mask
+	Box     image.Rectangle
+	Mask    *image.Gray
 }
 
 // ClassResult holds classification result
 type ClassResult struct {
-	// Class ID, e.g.:
-	//	436: station wagon
-	//	656: minivan
-	// For full mapping, see:
-	//	https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/datasets/ImageNet.yaml
 	ClassID int
 	Score   float32
 }
 
-// DefaultClsConfig returns default classification configuration
-func DefaultClsConfig() Config {
-	cfg := DefaultConfig()
-	cfg.InputSize = 224
-	cfg.ModelPath = modelpath.ModelPath("yolo26", "yolo26-cls.onnx")
-	return cfg
-}
-
 // KeyPoint holds a single keypoint
 type KeyPoint struct {
-	X, Y  int     // original image coordinates
-	Score float32 // visibility/confidence
+	X, Y  int
+	Score float32
 }
 
 // PoseResult holds pose estimation result
 type PoseResult struct {
-	//	https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/datasets/coco-pose.yaml
 	ClassID   int
 	Score     float32
 	Box       image.Rectangle
-	KeyPoints []KeyPoint // keypoint list
-}
-
-// DefaultPoseConfig returns default pose estimation configuration
-func DefaultPoseConfig() Config {
-	cfg := DefaultConfig()
-	cfg.NumClasses = 1
-	cfg.ModelPath = modelpath.ModelPath("yolo26", "yolo26m-pose.onnx")
-	return cfg
+	KeyPoints []KeyPoint
 }
 
 // OBBResult holds rotated object detection result
@@ -139,16 +147,6 @@ type OBBResult struct {
 	Score   float32
 	// rotated box vertex coordinates: TopLeft, TopRight, BottomRight, BottomLeft
 	Corners [4]image.Point
-
-	Center image.Point
-	Angle  float32 // radians
-}
-
-// DefaultOBBConfig returns default OBB configuration
-func DefaultOBBConfig() Config {
-	cfg := DefaultConfig()
-	cfg.InputSize = 1024
-	cfg.NumClasses = 15
-	cfg.ModelPath = modelpath.ModelPath("yolo26", "yolo26m-obb.onnx")
-	return cfg
+	Center  image.Point
+	Angle   float32
 }

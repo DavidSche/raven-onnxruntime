@@ -86,7 +86,7 @@ func (e *DetEngine) PredictBatch(imgs []image.Image) ([][]DetResult, error) {
 
 	// preprocess
 	preprocessStart := time.Now()
-	inputTensor, paramsList, err := preprocessBatch(imgs, e.config.InputSize, e.session)
+	inputTensor, paramsList, err := preprocessBatch(imgs, e.config.InputSize, e.session, e.config.PreprocessConfig)
 	if err != nil {
 		return nil, fmt.Errorf("preprocess failed: %w", err)
 	}
@@ -108,6 +108,7 @@ func (e *DetEngine) PredictBatch(imgs []image.Image) ([][]DetResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inference failed: %w", err)
 	}
+	defer ort.DestroyValues(outputValues)
 	runElapsed := time.Since(runStart)
 
 	// get first output (compatible with different output names)
@@ -123,15 +124,18 @@ func (e *DetEngine) PredictBatch(imgs []image.Image) ([][]DetResult, error) {
 	// Output Shape: [N, 300, 6]
 	data, err := ort.GetTensorData[float32](outputValue)
 	if err != nil {
-		outputValue.Destroy()
 		return nil, fmt.Errorf("failed to get output data: %w", err)
 	}
 
 	shape, err := outputValue.GetShape()
-	outputValue.Destroy()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get output shape: %w", err)
 	}
+	// NOTE: Do NOT call outputValue.Destroy() here. GetTensorData returns a
+	// reference to ORT-managed memory (not a copy), so destroying the Value
+	// before postprocess reads `data` would be a use-after-free.
+	// The deferred ort.DestroyValues(outputValues) at the top of this function
+	// will release the output after postprocess completes.
 
 	if len(shape) != 3 {
 		return nil, fmt.Errorf("unexpected output shape: %v", shape)
@@ -201,10 +205,10 @@ func (e *DetEngine) postprocess(data []float32, params imageParams) []DetResult 
 		}
 
 		// convert back to original image coordinates
-		origX1 := max(0, int(x1/params.scale))
-		origY1 := max(0, int(y1/params.scale))
-		origX2 := min(params.origW, int(x2/params.scale))
-		origY2 := min(params.origH, int(y2/params.scale))
+		origX1 := max(0, int((x1-float32(params.padX))/params.scale))
+		origY1 := max(0, int((y1-float32(params.padY))/params.scale))
+		origX2 := min(params.origW, int((x2-float32(params.padX))/params.scale))
+		origY2 := min(params.origH, int((y2-float32(params.padY))/params.scale))
 
 		results = append(results, DetResult{
 			ClassID: classID,

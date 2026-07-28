@@ -5,6 +5,7 @@ import (
 
 	"github.com/DavidSche/raven-onnxruntime/internal/modelpath"
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
+	"github.com/DavidSche/raven-onnxruntime/vision"
 )
 
 type Config struct {
@@ -21,11 +22,13 @@ type Config struct {
 	NumThreads        int
 	EnableCpuMemArena bool
 	ApiVersion        ort.ApiVersion
+	PreprocessConfig  vision.PreprocessConfig
 }
 
 func DefaultConfig() Config {
 	return Config{
 		OnnxRuntimeLibPath: ort.DefaultLibraryPath(),
+		PreprocessConfig:   vision.DefaultImageNetPreprocessConfig(),
 		ConfThreshold:      0.5,
 		InputSize:          0,
 		NumClasses:         80,
@@ -35,7 +38,7 @@ func DefaultConfig() Config {
 
 func DefaultDetConfig() Config {
 	cfg := DefaultConfig()
-	cfg.ModelPath = modelpath.ModelPath("ltdetr", "dinov3_vits16-ltdetr-coco.onnx")
+	cfg.ModelPath = modelpath.ModelPath("ltdetr", modelpath.LTDETRDetFile)
 	return cfg
 }
 

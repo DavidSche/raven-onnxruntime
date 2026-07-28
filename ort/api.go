@@ -378,51 +378,62 @@ type ortApi struct {
 	Node_GetGraph                                       uintptr // 367
 	Node_GetEpName                                      uintptr // 368
 	ReleaseExternalInitializerInfo                      uintptr // 369
-	ExternalInitializerInfo_GetFileOffset               uintptr // 370
-	ExternalInitializerInfo_GetByteSize                 uintptr // 371
-	CreateSharedAllocator                               uintptr // 372
-	GetSharedAllocator                                  uintptr // 373
-	ReleaseSharedAllocator                              uintptr // 374
-	GetTensorData                                       uintptr // 375
-	GetSessionOptionsConfigEntries                      uintptr // 376
-	SessionGetMemoryInfoForInputs                       uintptr // 377
-	SessionGetMemoryInfoForOutputs                      uintptr // 378
-	SessionGetEpDeviceForInputs                         uintptr // 379
-	CreateSyncStreamForEpDevice                         uintptr // 380
-	ReleaseSyncStream                                   uintptr // 381
-	CopyTensors                                         uintptr // 382
-	Graph_GetModelMetadata                              uintptr // 383
-	GetModelCompatibilityForEpDevices                   uintptr // 384
-	CreateExternalInitializerInfo                       uintptr // 385
-	TensorTypeAndShape_HasShape                         uintptr // 386
-	KernelInfo_GetConfigEntries                         uintptr // 387
-	KernelInfo_GetOperatorDomain                        uintptr // 388
-	KernelInfo_GetOperatorType                          uintptr // 389
-	KernelInfo_GetOperatorSinceVersion                  uintptr // 390
-	GetInteropApi                                       uintptr // 391
-	SessionGetEpDeviceForOutputs                        uintptr // 392
-	GetNumHardwareDevices                               uintptr // 393
-	GetHardwareDevices                                  uintptr // 394
-	GetHardwareDeviceEpIncompatibilityDetails           uintptr // 395
-	DeviceEpIncompatibilityDetails_GetReasonsBitmask    uintptr // 396
-	DeviceEpIncompatibilityDetails_GetNotes             uintptr // 397
-	DeviceEpIncompatibilityDetails_GetErrorCode         uintptr // 398
-	ReleaseDeviceEpIncompatibilityDetails               uintptr // 399
-	GetCompatibilityInfoFromModel                       uintptr // 400
-	GetCompatibilityInfoFromModelBytes                  uintptr // 401
-	CreateEnvWithOptions                                uintptr // 402
-	Session_GetEpGraphAssignmentInfo                    uintptr // 403
-	EpAssignedSubgraph_GetEpName                        uintptr // 404
-	EpAssignedSubgraph_GetNodes                         uintptr // 405
-	EpAssignedNode_GetName                              uintptr // 406
-	EpAssignedNode_GetDomain                            uintptr // 407
-	EpAssignedNode_GetOperatorType                      uintptr // 408
-	RunOptionsSetSyncStream                             uintptr // 409
-	GetTensorElementTypeAndShapeDataReference           uintptr // 410
-	RunOptionsEnableProfiling                           uintptr // 411
-	RunOptionsDisableProfiling                          uintptr // 412
-	KernelInfoGetAttributeArray_string                  uintptr // 413
-	SetPerSessionThreadPoolCallbacks                    uintptr // 414
+	ExternalInitializerInfo_GetFilePath                 uintptr // 370 (since v1.23, ORT_API_T)
+	ExternalInitializerInfo_GetFileOffset               uintptr // 371 (since v1.23, ORT_API_T)
+	ExternalInitializerInfo_GetByteSize                 uintptr // 372 (since v1.23, ORT_API_T)
+	GetRunConfigEntry                                   uintptr // 373 (since v1.23, ORT_API_T)
+	EpDevice_MemoryInfo                                 uintptr // 374 (since v1.23, ORT_API_T)
+	CreateSharedAllocator                               uintptr // 375
+	GetSharedAllocator                                  uintptr // 376
+	ReleaseSharedAllocator                              uintptr // 377
+	GetTensorData                                       uintptr // 378
+	GetSessionOptionsConfigEntries                      uintptr // 379
+	SessionGetMemoryInfoForInputs                       uintptr // 380
+	SessionGetMemoryInfoForOutputs                      uintptr // 381
+	SessionGetEpDeviceForInputs                         uintptr // 382
+	CreateSyncStreamForEpDevice                         uintptr // 383
+	SyncStream_GetHandle                                uintptr // 384 (since v1.23, ORT_API_T)
+	ReleaseSyncStream                                   uintptr // 385
+	CopyTensors                                         uintptr // 386
+	Graph_GetModelMetadata                              uintptr // 387
+	GetModelCompatibilityForEpDevices                   uintptr // 388
+	CreateExternalInitializerInfo                       uintptr // 389
+	TensorTypeAndShape_HasShape                         uintptr // 390
+	KernelInfo_GetConfigEntries                         uintptr // 391
+	KernelInfo_GetOperatorDomain                        uintptr // 392
+	KernelInfo_GetOperatorType                          uintptr // 393
+	KernelInfo_GetOperatorSinceVersion                  uintptr // 394
+	GetInteropApi                                       uintptr // 395
+	SessionGetEpDeviceForOutputs                        uintptr // 396
+	GetNumHardwareDevices                               uintptr // 397
+	GetHardwareDevices                                  uintptr // 398
+	GetHardwareDeviceEpIncompatibilityDetails           uintptr // 399
+	DeviceEpIncompatibilityDetails_GetReasonsBitmask    uintptr // 400
+	DeviceEpIncompatibilityDetails_GetNotes             uintptr // 401
+	DeviceEpIncompatibilityDetails_GetErrorCode         uintptr // 402
+	ReleaseDeviceEpIncompatibilityDetails               uintptr // 403
+	GetCompatibilityInfoFromModel                       uintptr // 404
+	GetCompatibilityInfoFromModelBytes                  uintptr // 405
+	CreateEnvWithOptions                                uintptr // 406
+	Session_GetEpGraphAssignmentInfo                    uintptr // 407
+	EpAssignedSubgraph_GetEpName                        uintptr // 408
+	EpAssignedSubgraph_GetNodes                         uintptr // 409
+	EpAssignedNode_GetName                              uintptr // 410
+	EpAssignedNode_GetDomain                            uintptr // 411
+	EpAssignedNode_GetOperatorType                      uintptr // 412
+	RunOptionsSetSyncStream                             uintptr // 413
+	GetTensorElementTypeAndShapeDataReference           uintptr // 414
+	RunOptionsEnableProfiling                           uintptr // 415
+	RunOptionsDisableProfiling                          uintptr // 416
+	KernelInfoGetAttributeArray_string                  uintptr // 417
+	SetPerSessionThreadPoolCallbacks                    uintptr // 418
+	// --- Functions added in ORT 1.27 (ORT_API_VERSION 27), appended to the OrtApi struct ---
+	GetMemPatternEnabled        uintptr // 419 (since v1.27, ORT_API2_STATUS)
+	GetSessionExecutionMode     uintptr // 420 (since v1.27, ORT_API2_STATUS)
+	SessionReleaseCapturedGraph uintptr // 421 (since v1.27, ORT_API2_STATUS)
+	// --- Functions added in ORT 1.28 (ORT_API_VERSION 28), appended to the OrtApi struct ---
+	GetExperimentalFunction     uintptr // 422 (since v1.28, ORT_API_T, returns OrtExperimentalFnPtr)
+	KernelContext_GetSyncStream uintptr // 423 (since v1.28, ORT_API2_STATUS)
 }
 
 // OrtStatus is an opaque pointer to an ONNX Runtime status object.
@@ -566,4 +577,12 @@ type apiFuncs struct {
 	// provider
 	getAvailableProviders     func(***byte, *int32) StatusHandle
 	releaseAvailableProviders func(**byte, int32) StatusHandle
+
+	// ORT 1.27+ APIs (registered conditionally when apiVersion >= 27)
+	getMemPatternEnabled        func(SessionOptionsHandle, *int32) StatusHandle         // 419
+	getSessionExecutionModeFunc func(SessionOptionsHandle, *ExecutionMode) StatusHandle // 420
+	sessionReleaseCapturedGraph func(SessionHandle, int32) StatusHandle                 // 421
+
+	// ORT 1.28+ APIs (registered conditionally when apiVersion >= 28)
+	getExperimentalFunction func(*byte) unsafe.Pointer // 422 (returns OrtExperimentalFnPtr or nil)
 }

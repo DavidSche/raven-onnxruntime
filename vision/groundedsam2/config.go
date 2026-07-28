@@ -6,6 +6,7 @@ import (
 
 	"github.com/DavidSche/raven-onnxruntime/internal/modelpath"
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
+	"github.com/DavidSche/raven-onnxruntime/vision"
 	"github.com/DavidSche/raven-onnxruntime/vision/manifest"
 )
 
@@ -19,6 +20,7 @@ type Config struct {
 	UseCuda            bool
 	NumThreads         int
 	EnableCpuMemArena  bool
+	PreprocessConfig   vision.PreprocessConfig
 	ApiVersion         ort.ApiVersion
 
 	// 检测参数
@@ -36,6 +38,7 @@ type Config struct {
 func DefaultSegConfig() Config {
 	return Config{
 		OnnxRuntimeLibPath: ort.DefaultLibraryPath(),
+		PreprocessConfig:   vision.DefaultImageNetPreprocessConfig(),
 		ModelPath:          modelpath.ModelPath("grounded-sam2"),
 		UseCuda:            false,
 		NumThreads:         1,

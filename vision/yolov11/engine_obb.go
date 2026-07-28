@@ -50,7 +50,7 @@ func (e *OBBEngine) Destroy() {
 // Predict executes rotated object detection
 func (e *OBBEngine) Predict(img image.Image) ([]OBBResult, error) {
 	// preprocess
-	inputTensor, params, err := preprocess(img, e.config.InputSize, e.session)
+	inputTensor, params, err := preprocess(img, e.config.InputSize, e.session, e.config.PreprocessConfig)
 	if err != nil {
 		return nil, fmt.Errorf("preprocess failed: %w", err)
 	}
@@ -70,6 +70,7 @@ func (e *OBBEngine) Predict(img image.Image) ([]OBBResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inference failed: %w", err)
 	}
+	defer ort.DestroyValues(outputValues)
 
 	// get first output (compatible with different output names)
 	if len(e.session.OutputNames) == 0 {

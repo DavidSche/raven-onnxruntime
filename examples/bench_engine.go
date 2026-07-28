@@ -7,6 +7,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/DavidSche/raven-onnxruntime/vision/dfine"
 	"github.com/DavidSche/raven-onnxruntime/vision/edgecrafter"
 	"github.com/DavidSche/raven-onnxruntime/vision/ltdetr"
 	"github.com/DavidSche/raven-onnxruntime/vision/rfdetr"
@@ -441,6 +442,8 @@ func CreateEngine(spec EngineSpec) (BenchEngine, error) {
 		return createRFDETRengine(spec)
 	case "ltdetr":
 		return createLTDETRengine(spec)
+	case "dfine":
+		return createDFINEengine(spec)
 	case "edgecrafter":
 		return createEdgeCrafterEngine(spec)
 	default:
@@ -608,6 +611,87 @@ func createLTDETRengine(spec EngineSpec) (BenchEngine, error) {
 		return nil, fmt.Errorf("unsupported LTDETR task: %s", spec.Task)
 	}
 }
+
+// --- D-FINE Adapters ---
+
+type dfineDetAdapter struct {
+	engine *dfine.DetEngine
+	name   string
+}
+
+func (a *dfineDetAdapter) Name() string        { return a.name }
+func (a *dfineDetAdapter) Task() string        { return "det" }
+func (a *dfineDetAdapter) SupportsBatch() bool { return true }
+func (a *dfineDetAdapter) Destroy()            { a.engine.Destroy() }
+func (a *dfineDetAdapter) Predict(img image.Image) (int, error) {
+	res, err := a.engine.Predict(img)
+	if err != nil {
+		return 0, err
+	}
+	return len(res), nil
+}
+func (a *dfineDetAdapter) PredictBatch(imgs []image.Image) (int, error) {
+	res, err := a.engine.PredictBatch(imgs)
+	if err != nil {
+		return 0, err
+	}
+	total := 0
+	for _, r := range res {
+		total += len(r)
+	}
+	return total, nil
+}
+
+type dfineSegAdapter struct {
+	engine *dfine.SegEngine
+	name   string
+}
+
+func (a *dfineSegAdapter) Name() string        { return a.name }
+func (a *dfineSegAdapter) Task() string        { return "seg" }
+func (a *dfineSegAdapter) SupportsBatch() bool { return false }
+func (a *dfineSegAdapter) Destroy()            { a.engine.Destroy() }
+func (a *dfineSegAdapter) Predict(img image.Image) (int, error) {
+	res, err := a.engine.Predict(img)
+	if err != nil {
+		return 0, err
+	}
+	return len(res), nil
+}
+func (a *dfineSegAdapter) PredictBatch(imgs []image.Image) (int, error) {
+	return 0, nil
+}
+
+func createDFINEengine(spec EngineSpec) (BenchEngine, error) {
+	switch spec.Task {
+	case "det":
+		cfg := dfine.DefaultDetConfig()
+		cfg.ModelPath = spec.ModelPath
+		cfg.OnnxRuntimeLibPath = spec.LibPath
+		cfg.UseCuda = spec.UseCuda
+		cfg.DynamicBatch = spec.DynBatch
+		e, err := dfine.NewDetEngine(cfg)
+		if err != nil {
+			return nil, err
+		}
+		return &dfineDetAdapter{engine: e, name: "D-FINE-det"}, nil
+	case "seg":
+		cfg := dfine.DefaultSegConfig()
+		cfg.ModelPath = spec.ModelPath
+		cfg.OnnxRuntimeLibPath = spec.LibPath
+		cfg.UseCuda = spec.UseCuda
+		cfg.DynamicBatch = spec.DynBatch
+		e, err := dfine.NewSegEngine(cfg)
+		if err != nil {
+			return nil, err
+		}
+		return &dfineSegAdapter{engine: e, name: "D-FINE-seg"}, nil
+	default:
+		return nil, fmt.Errorf("unsupported D-FINE task: %s", spec.Task)
+	}
+}
+
+// --- EdgeCrafter Adapters ---
 
 func createEdgeCrafterEngine(spec EngineSpec) (BenchEngine, error) {
 	switch spec.Task {

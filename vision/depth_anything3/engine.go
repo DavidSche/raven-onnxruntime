@@ -99,6 +99,7 @@ func (e *Engine) Predict(img image.Image) (*DepthResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inference failed: %w", err)
 	}
+	defer ort.DestroyValues(outputValues)
 	runElapsed := time.Since(runStart)
 
 	// Postprocess
@@ -130,11 +131,13 @@ func (e *Engine) postprocess(outputValues map[string]*ort.Value, params imagePar
 
 	depthData, err := ort.GetTensorData[float32](depthOutput)
 	if err != nil {
-		depthOutput.Destroy()
 		return nil, fmt.Errorf("failed to get depth data: %w", err)
 	}
 	depthShape, _ := depthOutput.GetShape()
-	depthOutput.Destroy()
+	// NOTE: Do NOT call depthOutput.Destroy() here. GetTensorData returns a
+	// reference to ORT-managed memory (not a copy), so destroying the Value
+	// before copying depthData below would be a use-after-free.
+	// The deferred ort.DestroyValues(outputValues) in Predict handles cleanup.
 
 	// Get depth_conf output
 	confOutput, ok := outputValues["depth_conf"]
@@ -148,19 +151,12 @@ func (e *Engine) postprocess(outputValues map[string]*ort.Value, params imagePar
 	var confData []float32
 	if confOutput != nil {
 		confData, err = ort.GetTensorData[float32](confOutput)
-		confOutput.Destroy()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get depth_conf data: %w", err)
 		}
 	}
-
-	// Destroy remaining outputs
-	for name, v := range outputValues {
-		if v != nil && v != depthOutput && v != confOutput {
-			v.Destroy()
-			_ = name
-		}
-	}
+	// NOTE: Do NOT destroy confOutput here either; confData references its memory.
+	// The deferred ort.DestroyValues(outputValues) in Predict handles all outputs.
 
 	// Parse output shape
 	// depth: (B, 1, H, W) -> extract (H, W)

@@ -3,7 +3,9 @@ package ort
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
+	"sync"
 	"unsafe"
 
 	"github.com/DavidSche/raven-onnxruntime/ort/internal/sys"
@@ -24,8 +26,10 @@ const (
 	ApiVersion24 ApiVersion = 24
 	ApiVersion25 ApiVersion = 25
 	ApiVersion26 ApiVersion = 26
+	ApiVersion27 ApiVersion = 27
+	ApiVersion28 ApiVersion = 28
 
-	DefaultApiVersion = ApiVersion26
+	DefaultApiVersion = ApiVersion28
 
 	LogVerbose LoggingLevel = 0
 	LogInfo    LoggingLevel = 1
@@ -37,7 +41,7 @@ const (
 )
 
 var supportedApiVersions = []ApiVersion{
-	ApiVersion26, ApiVersion25, ApiVersion24,
+	ApiVersion28, ApiVersion27, ApiVersion26, ApiVersion25, ApiVersion24,
 	ApiVersion23, ApiVersion22, ApiVersion21,
 	ApiVersion20, ApiVersion19, ApiVersion18, ApiVersion17,
 }
@@ -77,8 +81,9 @@ type Engine struct {
 	api     *ortApi
 	funcs   *apiFuncs
 
-	envHandle EnvHandle
-	memInfo   MemoryInfoHandle
+	envHandle   EnvHandle
+	memInfo     MemoryInfoHandle
+	destroyOnce sync.Once
 }
 
 func (e *Engine) AvailableProviders() ([]string, error) {
@@ -110,7 +115,7 @@ func (e *Engine) AvailableProviders() ([]string, error) {
 // Version negotiation strategy:
 //  1. Prefer the version specified by WithApiVersion
 //  2. Then read the environment variable ORT_API_VERSION
-//  3. Default to DefaultApiVersion (currently 26)
+//  3. Default to DefaultApiVersion (currently 28)
 //  4. If the requested version is unavailable, automatically downgrade to the highest version supported by the library
 func NewEngine(libPath string, opts ...EngineOption) (*Engine, error) {
 	requestedVersion := resolveApiVersion(opts)
@@ -156,7 +161,15 @@ func NewEngine(libPath string, opts ...EngineOption) (*Engine, error) {
 	return engine, nil
 }
 
-func (e *Engine) initApi() error {
+func (e *Engine) initApi() (err error) {
+	// purego.RegisterLibFunc/RegisterFunc panic if the symbol is not found
+	// or the function pointer is invalid. Recover and convert to error.
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic during ONNX Runtime API initialization: %v", r)
+		}
+	}()
+
 	var ortGetApiBase func() *ortApiBase
 	purego.RegisterLibFunc(&ortGetApiBase, e.handle, "OrtGetApiBase")
 
@@ -267,6 +280,21 @@ func (e *Engine) initApi() error {
 	purego.RegisterFunc(&e.funcs.getAvailableProviders, e.api.GetAvailableProviders)
 	purego.RegisterFunc(&e.funcs.releaseAvailableProviders, e.api.ReleaseAvailableProviders)
 
+	// ORT 1.27+ APIs — only register if the negotiated API version supports them.
+	// The native OrtApi struct grows by appending function pointers; reading fields
+	// beyond the struct's actual size (e.g. index 415+ on an API 26 library) is
+	// undefined behavior. The version guard below prevents that.
+	if e.version >= ApiVersion27 {
+		purego.RegisterFunc(&e.funcs.getMemPatternEnabled, e.api.GetMemPatternEnabled)
+		purego.RegisterFunc(&e.funcs.getSessionExecutionModeFunc, e.api.GetSessionExecutionMode)
+		purego.RegisterFunc(&e.funcs.sessionReleaseCapturedGraph, e.api.SessionReleaseCapturedGraph)
+	}
+
+	// ORT 1.28+ APIs
+	if e.version >= ApiVersion28 {
+		purego.RegisterFunc(&e.funcs.getExperimentalFunction, e.api.GetExperimentalFunction)
+	}
+
 	return nil
 }
 
@@ -276,6 +304,7 @@ func (e *Engine) initEnv(name string) error {
 		return err
 	}
 	status := e.funcs.createEnv(LogError, namePtr, &e.envHandle)
+	runtime.KeepAlive(namePtr)
 	if err := e.checkStatus(status); err != nil {
 		return fmt.Errorf("failed to create env: %w", err)
 	}
@@ -300,28 +329,64 @@ func (e *Engine) GetVersion() string {
 	return e.funcs.getVersionString()
 }
 
+// GetApiVersion returns the negotiated ONNX Runtime C API version (e.g. 28).
+func (e *Engine) GetApiVersion() ApiVersion {
+	return e.version
+}
+
+// GetExperimentalFunction retrieves an experimental function pointer by name.
+//
+// Experimental functions are not part of the stable ABI and may be added or removed
+// between releases without notice. The returned unsafe.Pointer is an opaque function
+// pointer (OrtExperimentalFnPtr) that the caller must cast to the correct function
+// pointer type before calling, typically via purego.RegisterFunc.
+//
+// Name constants and typedefs are defined in onnxruntime_experimental_c_api.h.
+// Names follow the pattern "<target struct>_<function name>_SinceV<ORT API version>".
+//
+// Requires ONNX Runtime 1.28+ (ORT_API_VERSION 28). Returns an error if the
+// loaded library does not support this API.
+func (e *Engine) GetExperimentalFunction(name string) (unsafe.Pointer, error) {
+	if e.funcs.getExperimentalFunction == nil {
+		return nil, fmt.Errorf("GetExperimentalFunction requires ONNX Runtime 1.28+ (current API version: %d)", e.version)
+	}
+	namePtr, err := stringToCString(name)
+	if err != nil {
+		return nil, err
+	}
+	fn := e.funcs.getExperimentalFunction(namePtr)
+	runtime.KeepAlive(namePtr)
+	if fn == nil {
+		return nil, fmt.Errorf("experimental function %q not found in this ORT build", name)
+	}
+	return fn, nil
+}
+
 // Destroy releases all resources held by the engine.
+// This method is safe for concurrent use; it will only execute once.
 func (e *Engine) Destroy() {
-	ortlog.Infow("destroying ONNX Runtime engine")
-	if e.memInfo != 0 {
-		if e.funcs != nil && e.funcs.releaseMemoryInfo != nil {
-			e.funcs.releaseMemoryInfo(e.memInfo)
+	e.destroyOnce.Do(func() {
+		ortlog.Infow("destroying ONNX Runtime engine")
+		if e.memInfo != 0 {
+			if e.funcs != nil && e.funcs.releaseMemoryInfo != nil {
+				e.funcs.releaseMemoryInfo(e.memInfo)
+			}
+			e.memInfo = 0
 		}
-		e.memInfo = 0
-	}
-	if e.envHandle != 0 {
-		if e.funcs != nil && e.funcs.releaseEnv != nil {
-			e.funcs.releaseEnv(e.envHandle)
+		if e.envHandle != 0 {
+			if e.funcs != nil && e.funcs.releaseEnv != nil {
+				e.funcs.releaseEnv(e.envHandle)
+			}
+			e.envHandle = 0
 		}
-		e.envHandle = 0
-	}
-	if e.handle != 0 {
-		if err := sys.FreeLibrary(e.handle); err != nil {
-			ortlog.Warnw("failed to unload ONNX Runtime library", "error", err)
+		if e.handle != 0 {
+			if err := sys.FreeLibrary(e.handle); err != nil {
+				ortlog.Warnw("failed to unload ONNX Runtime library", "error", err)
+			}
+			e.handle = 0
 		}
-		e.handle = 0
-	}
-	ortlog.Infow("ONNX Runtime engine destroyed")
+		ortlog.Infow("ONNX Runtime engine destroyed")
+	})
 }
 
 // IsAlive reports whether the engine still owns a live native handle.

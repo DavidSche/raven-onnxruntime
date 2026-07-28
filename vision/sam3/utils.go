@@ -50,6 +50,9 @@ func fastExp(x float32) float32 {
 
 func upscaleMaskLogits(logits []float32, logitsH, logitsW, dstW, dstH int) []uint8 {
 	output := make([]uint8, dstW*dstH)
+	if logitsH < 2 || logitsW < 2 || dstW == 0 || dstH == 0 {
+		return output
+	}
 	xRatio := float32(logitsW) / float32(dstW)
 	yRatio := float32(logitsH) / float32(dstH)
 

@@ -88,7 +88,7 @@ func (e *PoseEngine) Predict(img image.Image) ([]PoseResult, error) {
 	startedAt := time.Now()
 
 	preprocessStart := time.Now()
-	inputTensor, params, err := preprocess(img, e.config.InputSize, e.session)
+	inputTensor, params, err := preprocess(img, e.config.InputSize, e.session, e.config.PreprocessConfig)
 	if err != nil {
 		return nil, fmt.Errorf("preprocess failed: %w", err)
 	}
@@ -109,6 +109,7 @@ func (e *PoseEngine) Predict(img image.Image) ([]PoseResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inference failed: %w", err)
 	}
+	defer ort.DestroyValues(outputValues)
 	runElapsed := time.Since(runStart)
 
 	// Resolve outputs: pred_logits and pred_keypoints
@@ -211,7 +212,7 @@ func (e *PoseEngine) PredictBatch(imgs []image.Image) ([][]PoseResult, error) {
 	startedAt := time.Now()
 
 	preprocessStart := time.Now()
-	inputTensor, paramsList, err := preprocessBatch(imgs, e.config.InputSize, e.session)
+	inputTensor, paramsList, err := preprocessBatch(imgs, e.config.InputSize, e.session, e.config.PreprocessConfig)
 	if err != nil {
 		return nil, fmt.Errorf("preprocess failed: %w", err)
 	}
@@ -232,6 +233,7 @@ func (e *PoseEngine) PredictBatch(imgs []image.Image) ([][]PoseResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inference failed: %w", err)
 	}
+	defer ort.DestroyValues(outputValues)
 	runElapsed := time.Since(runStart)
 
 	var logitsName, keypointsName string
@@ -392,7 +394,7 @@ func (e *PoseEngine) postprocess(
 			kpts[k] = KeyPoint{
 				X:     origX,
 				Y:     origY,
-				Score: 1.0, // Raw model doesn't output keypoint confidence
+				Score: cand.score,
 			}
 		}
 

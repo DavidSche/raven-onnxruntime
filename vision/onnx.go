@@ -2,6 +2,7 @@ package vision
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
@@ -19,7 +20,7 @@ type OnnxConfig struct {
 	NumThreads int  // (optional) ONNX thread count, default determined by CPU core count
 
 	// ApiVersion specifies the requested ONNX Runtime C API version.
-	// Default is ort.DefaultApiVersion (currently 26).
+	// Default is ort.DefaultApiVersion (currently 28).
 	// If the specified version is unavailable, NewEngine will automatically downgrade to the highest version supported by the library.
 	// Can also be overridden via the ORT_API_VERSION environment variable.
 	ApiVersion ort.ApiVersion
@@ -42,13 +43,19 @@ var engineState struct {
 //
 // The global Engine is a singleton (only one DLL loaded per process).
 // Key difference from sync.Once: DLL load failures can be retried, not permanently stuck.
-func (cfg *OnnxConfig) New() error {
+func (cfg *OnnxConfig) New() (err error) {
 	if cfg.OnnxRuntimeLibPath == "" {
 		return fmt.Errorf("OnnxRuntimeLibPath must not be empty")
 	}
 
 	engineState.mu.Lock()
 	defer engineState.mu.Unlock()
+
+	// M1: refuse to silently overwrite a previously initialized Engine with a
+	// different library path; otherwise the old Engine would never be Destroyed.
+	if engineState.eng != nil && engineState.path != cfg.OnnxRuntimeLibPath {
+		return fmt.Errorf("ONNX Runtime engine already initialized with a different library path: %q (requested %q)", engineState.path, cfg.OnnxRuntimeLibPath)
+	}
 
 	if engineState.eng != nil && engineState.path == cfg.OnnxRuntimeLibPath {
 		if engineState.eng.IsAlive() {
@@ -60,6 +67,18 @@ func (cfg *OnnxConfig) New() error {
 			engineState.path = ""
 		}
 	}
+
+	// createdEngine tracks whether this call created a brand-new Engine so that,
+	// on a later failure, we can roll back the singleton state (M2) and let a
+	// retry start from a clean slate instead of leaving a half-initialized Engine.
+	createdEngine := false
+	defer func() {
+		if err != nil && createdEngine {
+			engineState.eng = nil
+			engineState.path = ""
+			cfg.OnnxEngine = nil
+		}
+	}()
 
 	if cfg.OnnxEngine == nil {
 		var engineOpts []ort.EngineOption
@@ -73,6 +92,7 @@ func (cfg *OnnxConfig) New() error {
 		engineState.eng = eng
 		engineState.path = cfg.OnnxRuntimeLibPath
 		cfg.OnnxEngine = eng
+		createdEngine = true
 	}
 
 	providers, err := cfg.OnnxEngine.AvailableProviders()
@@ -119,7 +139,7 @@ func (cfg *OnnxConfig) New() error {
 
 	// enable CUDA (on failure, degrade to CPU without interrupting initialization)
 	if cfg.UseCuda {
-		if !containsString(providers, "CUDAExecutionProvider") {
+		if !slices.Contains(providers, "CUDAExecutionProvider") {
 			options.Destroy()
 			return fmt.Errorf("CUDA requested but CUDAExecutionProvider not detected in ONNX Runtime")
 		}
@@ -131,15 +151,6 @@ func (cfg *OnnxConfig) New() error {
 
 	cfg.SessionOptions = options
 	return nil
-}
-
-func containsString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }
 
 // Destroy releases SessionOptions and frees dynamically allocated C handle resources.

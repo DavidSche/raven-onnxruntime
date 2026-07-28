@@ -55,7 +55,7 @@ func (e *ClsEngine) Destroy() {
 //	topK: number of top-scoring classes to return
 func (e *ClsEngine) Predict(img image.Image, topK int) ([]ClassResult, error) {
 	// preprocess
-	inputTensor, _, err := preprocess(img, e.config.InputSize, e.session)
+	inputTensor, _, err := preprocess(img, e.config.InputSize, e.session, e.config.PreprocessConfig)
 	if err != nil {
 		return nil, fmt.Errorf("preprocess failed: %w", err)
 	}
@@ -74,6 +74,7 @@ func (e *ClsEngine) Predict(img image.Image, topK int) ([]ClassResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inference failed: %w", err)
 	}
+	defer ort.DestroyValues(outputValues)
 
 	if len(e.session.OutputNames) == 0 {
 		return nil, fmt.Errorf("model has no output")

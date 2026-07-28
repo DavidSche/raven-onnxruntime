@@ -35,6 +35,9 @@ func normalizeAndPad(src image.Image, targetW, targetH int) []float32 {
 // upscaleMaskLogits upscales mask logits to original image size
 func upscaleMaskLogits(logits []float32, logitsDim, validW, validH, dstW, dstH int) []uint8 {
 	output := make([]uint8, dstW*dstH)
+	if validW == 0 || validH == 0 || dstW == 0 || dstH == 0 {
+		return output
+	}
 	xRatio := float32(validW) / float32(dstW)
 	yRatio := float32(validH) / float32(dstH)
 

@@ -58,6 +58,8 @@ A pure Go ONNX Runtime visual model inference library, using [purego](https://gi
 | SAM3 / SAM3H / SAM3.1 | Image Segmentation | `vision/sam3` | — | ✅ |
 | Depth-Anything-3 | Depth Estimation | `vision/depth_anything3` | — | ✅ |
 
+> Note: `vision/groundingdino` and `vision/groundedsam2` ship with a lightweight fallback tokenizer for local testing. It is character-based and not a production BERT tokenizer. For real open-vocabulary use, pre-tokenize captions with Python and load the cached tokenization files instead.
+
 ## Project Structure
 
 ```

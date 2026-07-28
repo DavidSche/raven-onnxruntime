@@ -15,7 +15,7 @@ func TestDrawer_DrawText(t *testing.T) {
 	}
 	defer d.Close()
 
-	img, err := imageutil.Open("../assets/logo.png")
+	img, err := imageutil.Open("../examples/test.png")
 	if err != nil {
 		t.Fatal(err)
 	}

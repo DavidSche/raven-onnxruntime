@@ -2,6 +2,8 @@ package ort
 
 import (
 	"fmt"
+	"runtime"
+	"sync"
 	"unsafe"
 
 	"github.com/up-zero/gotool"
@@ -15,6 +17,7 @@ type Value struct {
 	shape        []int64
 	elementCount int
 	dataRef      any // keeps the data slice alive to prevent GC
+	destroyOnce  sync.Once
 }
 
 // NewTensor creates a Tensor using the Engine.
@@ -44,6 +47,12 @@ func (e *Engine) NewTensor(shape []int64, data any) (*Value, error) {
 		dataType,
 		&valHandle,
 	)
+	// Keep data and shape alive until the C call completes.
+	// dataPtr and shapePtr are unsafe.Pointers that the compiler does not
+	// associate with their backing slices, so without KeepAlive the GC
+	// could reclaim them while ORT is still reading them.
+	runtime.KeepAlive(data)
+	runtime.KeepAlive(shape)
 	if err := e.checkStatus(status); err != nil {
 		return nil, err
 	}
@@ -74,9 +83,11 @@ func (v *Value) GetShape() ([]int64, error) {
 	}
 
 	v.shape = make([]int64, dimCount)
-	status = v.engine.funcs.getDimensions(info, &v.shape[0], dimCount)
-	if err := v.engine.checkStatus(status); err != nil {
-		return nil, fmt.Errorf("failed to get dimensions: %w", err)
+	if dimCount > 0 {
+		status = v.engine.funcs.getDimensions(info, &v.shape[0], dimCount)
+		if err := v.engine.checkStatus(status); err != nil {
+			return nil, fmt.Errorf("failed to get dimensions: %w", err)
+		}
 	}
 
 	return v.shape, nil
@@ -104,8 +115,11 @@ func (v *Value) GetElementCount() (int, error) {
 	return v.elementCount, nil
 }
 
-// GetTensorData retrieves the Tensor data as the specified Go numeric type.
+// GetTensorData retrieves the Tensor data as the specified Go type.
 // The generic parameter T must match the actual Tensor element type, otherwise a type mismatch error is returned.
+//
+// IMPORTANT: This function returns a COPY of the ORT-managed tensor data.
+// The returned slice is safe to use after the Value is Destroyed.
 func GetTensorData[T gotool.Number](v *Value) ([]T, error) {
 	elementCount, err := v.GetElementCount()
 	if err != nil {
@@ -128,6 +142,14 @@ func GetTensorData[T gotool.Number](v *Value) ([]T, error) {
 	status = v.engine.funcs.getTensorMutableData(v.handle, &ptr)
 	if err := v.engine.checkStatus(status); err != nil {
 		return nil, fmt.Errorf("failed to get tensor mutable data: %w", err)
+	}
+
+	// Defensive: guard against nil pointer with non-zero elementCount
+	if elementCount > 0 && ptr == nil {
+		return nil, fmt.Errorf("getTensorMutableData returned nil pointer with elementCount=%d", elementCount)
+	}
+	if elementCount == 0 {
+		return []T{}, nil
 	}
 
 	var rawData any
@@ -159,11 +181,35 @@ func GetTensorData[T gotool.Number](v *Value) ([]T, error) {
 	}
 
 	if data, ok := rawData.([]T); ok {
-		return data, nil
+		// Return a copy to prevent use-after-free: the raw slice points into
+		// ORT-managed memory that is freed when the Value is Destroyed.
+		// Without this copy, callers that Destroy the Value before using the
+		// returned slice would read freed memory.
+		result := make([]T, len(data))
+		copy(result, data)
+		return result, nil
 	}
 
 	var t T
 	return nil, fmt.Errorf("tensor data type mismatch: actual ORT type %d does not match requested Go type %T", dataType, t)
+}
+
+// DestroyValues releases a map of output tensors.
+func DestroyValues(values map[string]*Value) {
+	for _, v := range values {
+		if v != nil {
+			v.Destroy()
+		}
+	}
+}
+
+// DestroyValueSlice releases a slice of values.
+func DestroyValueSlice(values []*Value) {
+	for _, v := range values {
+		if v != nil {
+			v.Destroy()
+		}
+	}
 }
 
 func (v *Value) getTypeAndShapeInfo() (TensorTypeAndShapeInfoHandle, error) {
@@ -261,14 +307,18 @@ func parseInputData(data any) (TensorElementDataType, uintptr, int, unsafe.Point
 	}
 }
 
-// Destroy releases the underlying ORT Value resources. The Value must not be used after calling Destroy.
+// Destroy releases the underlying ORT Value resources.
+// This method is safe for concurrent use; it will only execute once.
+// The Value must not be used after calling Destroy.
 func (v *Value) Destroy() {
-	if v.handle != 0 {
-		v.engine.funcs.releaseValue(v.handle)
-		v.handle = 0
-	}
-	// clear cached data to prevent misuse after Destroy
-	v.dataRef = nil
-	v.shape = nil
-	v.elementCount = 0
+	v.destroyOnce.Do(func() {
+		if v.handle != 0 {
+			v.engine.funcs.releaseValue(v.handle)
+			v.handle = 0
+		}
+		// clear cached data to prevent misuse after Destroy
+		v.dataRef = nil
+		v.shape = nil
+		v.elementCount = 0
+	})
 }

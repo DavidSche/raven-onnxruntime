@@ -1,15 +1,15 @@
 package rfdetr
 
 import (
+	"fmt"
 	"image"
 	"image/color"
-	"image/draw"
 	"math"
 	"os"
 	"strings"
 
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
-	"github.com/up-zero/gotool/imageutil"
+	"github.com/DavidSche/raven-onnxruntime/vision"
 )
 
 var colorGray255 = color.Gray{Y: 255}
@@ -34,6 +34,8 @@ var rfdetrModelResolutions = map[string]int{
 	"rf-detr-seg-large":   504,
 	"rf-detr-seg-xlarge":  624,
 	"rf-detr-seg-xxlarge": 768,
+	"rf-detr-keypoint":    576,
+	"rfdetr-keypoint":     576,
 }
 
 func detectInputSize(modelPath string) int {
@@ -68,7 +70,7 @@ func parseOnnxInputSizeAndDynamicBatch(modelPath string) (int, bool, error) {
 	}
 
 	inputInfo := findOnnxInputInfo(data)
-	if len(inputInfo.dims) >= 3 {
+	if len(inputInfo.dims) >= 4 {
 		h := inputInfo.dims[2]
 		w := inputInfo.dims[3]
 		if h > 0 && h == w {
@@ -249,36 +251,32 @@ func decodeVarint(data []byte, pos int) (uint64, int) {
 
 type imageParams struct {
 	origW, origH int
+	tpadX, padY  int
 }
 
-func preprocess(img image.Image, inputSize int, session *ort.Session) (*ort.Value, imageParams, error) {
+func preprocess(img image.Image, inputSize int, session *ort.Session, ppCfg vision.PreprocessConfig) (*ort.Value, imageParams, error) {
+	if img == nil {
+		return nil, imageParams{}, fmt.Errorf("input image is nil")
+	}
 	bounds := img.Bounds()
 	params := imageParams{
 		origW: bounds.Dx(),
 		origH: bounds.Dy(),
 	}
 
-	resized := imageutil.Resize(img, inputSize, inputSize)
+	means, stds := vision.GetNormalizeParams(ppCfg)
+	resized := vision.Resize(img, inputSize, inputSize, ppCfg.Interpolation)
 
 	data := make([]float32, 3*inputSize*inputSize)
-	planeSize := inputSize * inputSize
-
-	for y := 0; y < inputSize; y++ {
-		for x := 0; x < inputSize; x++ {
-			r, g, b, _ := resized.At(x, y).RGBA()
-
-			idx := y*inputSize + x
-			data[idx] = (float32(r)/65535.0 - imagenetMeans[0]) / imagenetStds[0]
-			data[planeSize+idx] = (float32(g)/65535.0 - imagenetMeans[1]) / imagenetStds[1]
-			data[2*planeSize+idx] = (float32(b)/65535.0 - imagenetMeans[2]) / imagenetStds[2]
-		}
+	if err := vision.FillCHWFromImage(data, resized, inputSize*inputSize, inputSize, inputSize, inputSize, means, stds); err != nil {
+		return nil, imageParams{}, err
 	}
 
 	tensor, err := session.NewTensor([]int64{1, 3, int64(inputSize), int64(inputSize)}, data)
 	return tensor, params, err
 }
 
-func preprocessBatch(imgs []image.Image, inputSize int, session *ort.Session) (*ort.Value, []imageParams, error) {
+func preprocessBatch(imgs []image.Image, inputSize int, session *ort.Session, ppCfg vision.PreprocessConfig) (*ort.Value, []imageParams, error) {
 	if len(imgs) == 0 {
 		return nil, nil, nil
 	}
@@ -290,24 +288,20 @@ func preprocessBatch(imgs []image.Image, inputSize int, session *ort.Session) (*
 	paramsList := make([]imageParams, batchSize)
 
 	for i, img := range imgs {
+		if img == nil {
+			return nil, nil, fmt.Errorf("input image at index %d is nil", i)
+		}
 		bounds := img.Bounds()
 		paramsList[i] = imageParams{
 			origW: bounds.Dx(),
 			origH: bounds.Dy(),
 		}
 
-		resized := imageutil.Resize(img, inputSize, inputSize)
-
+		means, stds := vision.GetNormalizeParams(ppCfg)
+		resized := vision.Resize(img, inputSize, inputSize, ppCfg.Interpolation)
 		base := i * sampleSize
-		for y := 0; y < inputSize; y++ {
-			for x := 0; x < inputSize; x++ {
-				r, g, b, _ := resized.At(x, y).RGBA()
-
-				spatialIdx := y*inputSize + x
-				data[base+spatialIdx] = (float32(r)/65535.0 - imagenetMeans[0]) / imagenetStds[0]
-				data[base+planeSize+spatialIdx] = (float32(g)/65535.0 - imagenetMeans[1]) / imagenetStds[1]
-				data[base+2*planeSize+spatialIdx] = (float32(b)/65535.0 - imagenetMeans[2]) / imagenetStds[2]
-			}
+		if err := vision.FillCHWFromImage(data[base:base+sampleSize], resized, planeSize, inputSize, inputSize, inputSize, means, stds); err != nil {
+			return nil, nil, err
 		}
 	}
 
@@ -360,47 +354,10 @@ type rawRGBImage interface {
 	RawRGB() ([]byte, int)
 }
 
-func fillCHWFromImage(data []float32, img image.Image, inputSize int) {
-	planeSize := inputSize * inputSize
-
-	switch src := img.(type) {
-	case rawRGBImage:
-		pix, stride := src.RawRGB()
-		for y := 0; y < inputSize; y++ {
-			rowBase := y * stride
-			dstBase := y * inputSize
-			for x := 0; x < inputSize; x++ {
-				srcIdx := rowBase + x*3
-				dstIdx := dstBase + x
-				data[dstIdx] = (float32(pix[srcIdx])/255.0 - imagenetMeans[0]) / imagenetStds[0]
-				data[planeSize+dstIdx] = (float32(pix[srcIdx+1])/255.0 - imagenetMeans[1]) / imagenetStds[1]
-				data[2*planeSize+dstIdx] = (float32(pix[srcIdx+2])/255.0 - imagenetMeans[2]) / imagenetStds[2]
-			}
-		}
-	case *image.RGBA:
-		fillCHWFromRGBA(data, src.Pix, src.Stride, inputSize)
-	case *image.NRGBA:
-		rgba := image.NewRGBA(src.Bounds())
-		draw.Draw(rgba, rgba.Bounds(), src, src.Bounds().Min, draw.Src)
-		fillCHWFromRGBA(data, rgba.Pix, rgba.Stride, inputSize)
-	default:
-		rgba := image.NewRGBA(img.Bounds())
-		draw.Draw(rgba, rgba.Bounds(), img, img.Bounds().Min, draw.Src)
-		fillCHWFromRGBA(data, rgba.Pix, rgba.Stride, inputSize)
-	}
+func fillCHWFromImage(data []float32, img image.Image, inputSize int) error {
+	return vision.FillCHWFromImage(data, img, inputSize*inputSize, inputSize, inputSize, inputSize, &imagenetMeans, &imagenetStds)
 }
 
-func fillCHWFromRGBA(data []float32, pix []byte, stride, inputSize int) {
-	planeSize := inputSize * inputSize
-	for y := 0; y < inputSize; y++ {
-		rowBase := y * stride
-		dstBase := y * inputSize
-		for x := 0; x < inputSize; x++ {
-			srcIdx := rowBase + x*4
-			dstIdx := dstBase + x
-			data[dstIdx] = (float32(pix[srcIdx])/255.0 - imagenetMeans[0]) / imagenetStds[0]
-			data[planeSize+dstIdx] = (float32(pix[srcIdx+1])/255.0 - imagenetMeans[1]) / imagenetStds[1]
-			data[2*planeSize+dstIdx] = (float32(pix[srcIdx+2])/255.0 - imagenetMeans[2]) / imagenetStds[2]
-		}
-	}
+func fillCHWFromRGBA(data []float32, pix []byte, stride, inputSize int) error {
+	return vision.FillCHWFromRGBA(data, pix, stride, inputSize*inputSize, inputSize, inputSize, inputSize, &imagenetMeans, &imagenetStds)
 }

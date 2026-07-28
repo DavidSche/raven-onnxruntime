@@ -8,16 +8,13 @@ import (
 	"sort"
 
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
+	"github.com/DavidSche/raven-onnxruntime/vision"
 	"github.com/up-zero/gotool/imageutil"
 )
 
-type rawRGBImage interface {
-	RawRGB() ([]byte, int)
-}
-
 // preprocess performs image preprocessing
-func preprocess(img image.Image, inputSize int, session *ort.Session) (*ort.Value, imageParams, error) {
-	data, params, err := preprocessToCHW(img, inputSize)
+func preprocess(img image.Image, inputSize int, session *ort.Session, ppCfg vision.PreprocessConfig) (*ort.Value, imageParams, error) {
+	data, params, err := preprocessToCHW(img, inputSize, ppCfg)
 	if err != nil {
 		return nil, imageParams{}, err
 	}
@@ -26,7 +23,7 @@ func preprocess(img image.Image, inputSize int, session *ort.Session) (*ort.Valu
 	return tensor, params, err
 }
 
-func preprocessBatch(imgs []image.Image, inputSize int, session *ort.Session) (*ort.Value, []imageParams, error) {
+func preprocessBatch(imgs []image.Image, inputSize int, session *ort.Session, ppCfg vision.PreprocessConfig) (*ort.Value, []imageParams, error) {
 	if len(imgs) == 0 {
 		return nil, nil, nil
 	}
@@ -37,7 +34,7 @@ func preprocessBatch(imgs []image.Image, inputSize int, session *ort.Session) (*
 	paramsList := make([]imageParams, batchSize)
 
 	for i, img := range imgs {
-		params, err := fillCHW(data[i*sampleSize:(i+1)*sampleSize], img, inputSize)
+		params, err := fillCHW(data[i*sampleSize:(i+1)*sampleSize], img, inputSize, ppCfg)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -48,97 +45,52 @@ func preprocessBatch(imgs []image.Image, inputSize int, session *ort.Session) (*
 	return tensor, paramsList, err
 }
 
-func preprocessToCHW(img image.Image, inputSize int) ([]float32, imageParams, error) {
+func preprocessToCHW(img image.Image, inputSize int, ppCfg vision.PreprocessConfig) ([]float32, imageParams, error) {
 	data := make([]float32, 3*inputSize*inputSize)
-	params, err := fillCHW(data, img, inputSize)
+	params, err := fillCHW(data, img, inputSize, ppCfg)
 	return data, params, err
 }
 
-func fillCHW(data []float32, img image.Image, inputSize int) (imageParams, error) {
+func fillCHW(data []float32, img image.Image, inputSize int, ppCfg vision.PreprocessConfig) (imageParams, error) {
 	bounds := img.Bounds()
-	params := imageParams{
-		origW: bounds.Dx(),
-		origH: bounds.Dy(),
-	}
+	origW, origH := bounds.Dx(), bounds.Dy()
 
-	scale := float32(inputSize) / float32(max(params.origW, params.origH))
-	params.scale = scale
-
-	newW := int(float32(params.origW) * scale)
-	newH := int(float32(params.origH) * scale)
-
-	if len(data) != 3*inputSize*inputSize {
-		return imageParams{}, image.ErrFormat
-	}
-
-	if newW == params.origW && newH == params.origH {
-		if fillCHWFastPath(data, img, inputSize, newW, newH) {
-			return params, nil
+	// Fast path: when the image already matches the target input size, read
+	// pixels directly instead of going through the LetterBox pipeline. This
+	// avoids an unnecessary resize, which matters because interpolators sample
+	// at sub-pixel positions and can blend adjacent pixels, corrupting exact
+	// pixel values (e.g. the unit-test 2x2 image, or any 1:1 case where a
+	// 255 channel must normalize to exactly 1.0).
+	if origW == inputSize && origH == inputSize {
+		means, stds := vision.GetNormalizeParams(ppCfg)
+		planeSize := inputSize * inputSize
+		if err := vision.FillCHWFromImage(data, img, planeSize, inputSize, inputSize, inputSize, means, stds); err != nil {
+			return imageParams{}, err
 		}
+		return imageParams{
+			origW: origW,
+			origH: origH,
+			scale: 1.0,
+			padX:  0,
+			padY:  0,
+		}, nil
 	}
 
-	resized := imageutil.Resize(img, newW, newH)
-	fillCHWFromImage(data, resized, inputSize, newW, newH)
+	// 使用 LetterBox 预处理（支持可配置插值、填充颜色、居中/靠边、归一化方法）
+	lbParams, err := vision.FillCHWWithLetterbox(data, img, ppCfg, inputSize)
+	if err != nil {
+		return imageParams{}, err
+	}
+
+	params := imageParams{
+		origW: origW,
+		origH: origH,
+		scale: lbParams.Scale,
+		padX:  lbParams.PadX,
+		padY:  lbParams.PadY,
+	}
 
 	return params, nil
-}
-
-func fillCHWFastPath(data []float32, img image.Image, inputSize, width, height int) bool {
-	switch src := img.(type) {
-	case rawRGBImage:
-		pix, stride := src.RawRGB()
-		fillCHWFromRGB24(data, pix, stride, inputSize, width, height)
-		return true
-	case *image.RGBA:
-		fillCHWFromRGBA(data, src.Pix, src.Stride, inputSize, width, height)
-		return true
-	case *image.NRGBA:
-		fillCHWFromRGBA(data, src.Pix, src.Stride, inputSize, width, height)
-		return true
-	default:
-		return false
-	}
-}
-
-func fillCHWFromImage(data []float32, img image.Image, inputSize, width, height int) {
-	if rgba, ok := img.(*image.RGBA); ok {
-		fillCHWFromRGBA(data, rgba.Pix, rgba.Stride, inputSize, width, height)
-		return
-	}
-
-	rgba := image.NewRGBA(image.Rect(0, 0, width, height))
-	draw.Draw(rgba, rgba.Bounds(), img, img.Bounds().Min, draw.Src)
-	fillCHWFromRGBA(data, rgba.Pix, rgba.Stride, inputSize, width, height)
-}
-
-func fillCHWFromRGB24(data []float32, pix []byte, stride, inputSize, width, height int) {
-	planeSize := inputSize * inputSize
-	for y := 0; y < height; y++ {
-		rowBase := y * stride
-		dstBase := y * inputSize
-		for x := 0; x < width; x++ {
-			srcIdx := rowBase + x*3
-			dstIdx := dstBase + x
-			data[dstIdx] = float32(pix[srcIdx]) / 255.0
-			data[planeSize+dstIdx] = float32(pix[srcIdx+1]) / 255.0
-			data[2*planeSize+dstIdx] = float32(pix[srcIdx+2]) / 255.0
-		}
-	}
-}
-
-func fillCHWFromRGBA(data []float32, pix []byte, stride, inputSize, width, height int) {
-	planeSize := inputSize * inputSize
-	for y := 0; y < height; y++ {
-		rowBase := y * stride
-		dstBase := y * inputSize
-		for x := 0; x < width; x++ {
-			srcIdx := rowBase + x*4
-			dstIdx := dstBase + x
-			data[dstIdx] = float32(pix[srcIdx]) / 255.0
-			data[planeSize+dstIdx] = float32(pix[srcIdx+1]) / 255.0
-			data[2*planeSize+dstIdx] = float32(pix[srcIdx+2]) / 255.0
-		}
-	}
 }
 
 func sigmoid(x float32) float32 {
@@ -202,11 +154,6 @@ var skeleton = [][2]int{
 }
 
 // DrawPoseResult draws the skeleton on the image
-//
-// # Params:
-//
-//	img: original image
-//	results: pose estimation results
 func DrawPoseResult(img image.Image, results []PoseResult) image.Image {
 	dst := image.NewRGBA(img.Bounds())
 	draw.Draw(dst, img.Bounds(), img, img.Bounds().Min, draw.Src)
@@ -220,7 +167,6 @@ func DrawPoseResult(img image.Image, results []PoseResult) image.Image {
 		// draw connection lines
 		for _, pair := range skeleton {
 			idxA, idxB := pair[0], pair[1]
-			// get two points
 			kpA := kpts[idxA]
 			kpB := kpts[idxB]
 			if kpA.Score > 0.5 && kpB.Score > 0.5 {
@@ -243,25 +189,14 @@ func getRotatedCorners(cx, cy, w, h, angle float32) [4][2]float32 {
 	cosA := float32(math.Cos(float64(angle)))
 	sinA := float32(math.Sin(float64(angle)))
 
-	// define half-width and half-height vectors before rotation
-	// 0: -w/2, -h/2 (TopLeft)
-	// 1: +w/2, -h/2 (TopRight)
-	// 2: +w/2, +h/2 (BottomRight)
-	// 3: -w/2, +h/2 (BottomLeft)
-
 	dx := []float32{-w / 2, w / 2, w / 2, -w / 2}
 	dy := []float32{-h / 2, -h / 2, h / 2, h / 2}
 
 	var corners [4][2]float32
 
 	for i := 0; i < 4; i++ {
-		// rotation matrix transformation
-		// x' = x*cos - y*sin
-		// y' = x*sin + y*cos
 		rx := dx[i]*cosA - dy[i]*sinA
 		ry := dx[i]*sinA + dy[i]*cosA
-
-		// add center coordinates
 		corners[i][0] = cx + rx
 		corners[i][1] = cy + ry
 	}

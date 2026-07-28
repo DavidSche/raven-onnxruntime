@@ -5,6 +5,7 @@ import (
 
 	"github.com/DavidSche/raven-onnxruntime/internal/modelpath"
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
+	"github.com/DavidSche/raven-onnxruntime/vision"
 )
 
 // Config holds engine initialization parameters
@@ -28,12 +29,14 @@ type Config struct {
 	NumThreads        int            // (optional) ONNX thread count, default determined by CPU cores
 	EnableCpuMemArena bool           // (optional) enable ONNX memory pool
 	ApiVersion        ort.ApiVersion // (optional) ONNX Runtime C API version, default ort.DefaultApiVersion
+	PreprocessConfig  vision.PreprocessConfig
 }
 
 // DefaultConfig returns default configuration
 func DefaultConfig() Config {
 	return Config{
 		OnnxRuntimeLibPath: ort.DefaultLibraryPath(),
+		PreprocessConfig:   vision.DefaultPreprocessConfig(),
 		ConfThreshold:      0.45,
 		IOUThreshold:       0.50,
 		MaskThreshold:      0.50,
@@ -47,14 +50,14 @@ func DefaultConfig() Config {
 // DefaultDetConfig returns default detection configuration
 func DefaultDetConfig() Config {
 	cfg := DefaultConfig()
-	cfg.ModelPath = modelpath.ModelPath("yolo11", "yolo11m.onnx")
+	cfg.ModelPath = modelpath.ModelPath("yolo11", modelpath.YOLO11DetFile)
 	return cfg
 }
 
 // DefaultSegConfig returns default segmentation configuration
 func DefaultSegConfig() Config {
 	cfg := DefaultConfig()
-	cfg.ModelPath = modelpath.ModelPath("yolo11", "yolo11m-seg.onnx")
+	cfg.ModelPath = modelpath.ModelPath("yolo11", modelpath.YOLO11SegFile)
 	return cfg
 }
 
@@ -62,7 +65,7 @@ func DefaultSegConfig() Config {
 func DefaultClsConfig() Config {
 	cfg := DefaultConfig()
 	cfg.InputSize = 224
-	cfg.ModelPath = modelpath.ModelPath("yolo11", "yolo11m-cls.onnx")
+	cfg.ModelPath = modelpath.ModelPath("yolo11", modelpath.YOLO11ClsFile)
 	return cfg
 }
 
@@ -70,7 +73,7 @@ func DefaultClsConfig() Config {
 func DefaultPoseConfig() Config {
 	cfg := DefaultConfig()
 	cfg.NumClasses = 1
-	cfg.ModelPath = modelpath.ModelPath("yolo11", "yolo11m-pose.onnx")
+	cfg.ModelPath = modelpath.ModelPath("yolo11", modelpath.YOLO11PoseFile)
 	return cfg
 }
 
@@ -79,7 +82,7 @@ func DefaultOBBConfig() Config {
 	cfg := DefaultConfig()
 	cfg.InputSize = 1024
 	cfg.NumClasses = 15
-	cfg.ModelPath = modelpath.ModelPath("yolo11", "yolo11m-obb.onnx")
+	cfg.ModelPath = modelpath.ModelPath("yolo11", modelpath.YOLO11OBBFile)
 	return cfg
 }
 
@@ -87,6 +90,7 @@ func DefaultOBBConfig() Config {
 type imageParams struct {
 	origW, origH int
 	scale        float32
+	padX, padY   int
 }
 
 // candidate holds a detection candidate

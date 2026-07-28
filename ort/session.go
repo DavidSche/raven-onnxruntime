@@ -17,11 +17,13 @@ type Session struct {
 	outputNameSlices    [][]byte
 	outputNamePtrs      []unsafe.Pointer
 	cachedInputNamePtrs sync.Map
+	destroyOnce         sync.Once
 }
 
 type SessionOptions struct {
-	handle SessionOptionsHandle
-	engine *Engine
+	handle      SessionOptionsHandle
+	engine      *Engine
+	destroyOnce sync.Once
 }
 
 func (e *Engine) NewSessionOptions() (*SessionOptions, error) {
@@ -72,6 +74,40 @@ func (o *SessionOptions) SetCpuMemArena(useArena bool) error {
 	return o.engine.checkStatus(o.engine.funcs.disableCpuMemArena(o.handle))
 }
 
+// GetMemPatternEnabled reports whether the memory pattern optimization is enabled
+// in the session options. This is the query counterpart to SetMemPattern.
+//
+// Requires ONNX Runtime 1.27+ (ORT_API_VERSION 27). Returns an error if the
+// loaded library does not support this API.
+func (o *SessionOptions) GetMemPatternEnabled() (bool, error) {
+	if o.engine.funcs.getMemPatternEnabled == nil {
+		return false, fmt.Errorf("GetMemPatternEnabled requires ONNX Runtime 1.27+ (current API version: %d)", o.engine.version)
+	}
+	var enabled int32
+	status := o.engine.funcs.getMemPatternEnabled(o.handle, &enabled)
+	if err := o.engine.checkStatus(status); err != nil {
+		return false, err
+	}
+	return enabled != 0, nil
+}
+
+// GetExecutionMode returns the current execution mode set on the session options.
+// This is the query counterpart to SetExecutionMode.
+//
+// Requires ONNX Runtime 1.27+ (ORT_API_VERSION 27). Returns an error if the
+// loaded library does not support this API.
+func (o *SessionOptions) GetExecutionMode() (ExecutionMode, error) {
+	if o.engine.funcs.getSessionExecutionModeFunc == nil {
+		return 0, fmt.Errorf("GetExecutionMode requires ONNX Runtime 1.27+ (current API version: %d)", o.engine.version)
+	}
+	var mode ExecutionMode
+	status := o.engine.funcs.getSessionExecutionModeFunc(o.handle, &mode)
+	if err := o.engine.checkStatus(status); err != nil {
+		return 0, err
+	}
+	return mode, nil
+}
+
 // EnableCUDA enables CUDA execution provider.
 func (o *SessionOptions) EnableCUDA() error {
 	var cudaOpts CUDAProviderOptionsV2Handle
@@ -85,11 +121,15 @@ func (o *SessionOptions) EnableCUDA() error {
 	return o.engine.checkStatus(status)
 }
 
+// Destroy releases the underlying ORT SessionOptions resources.
+// This method is safe for concurrent use; it will only execute once.
 func (o *SessionOptions) Destroy() {
-	if o.handle != 0 {
-		o.engine.funcs.releaseSessionOptions(o.handle)
-		o.handle = 0
-	}
+	o.destroyOnce.Do(func() {
+		if o.handle != 0 {
+			o.engine.funcs.releaseSessionOptions(o.handle)
+			o.handle = 0
+		}
+	})
 }
 
 // NewSession creates a new inference session.
@@ -114,6 +154,7 @@ func (e *Engine) NewSession(modelPath string, opts *SessionOptions) (*Session, e
 
 	var h SessionHandle
 	status := e.funcs.createSession(e.envHandle, pathPtr, optHandle, &h)
+	runtime.KeepAlive(pathPtr)
 	if err := e.checkStatus(status); err != nil {
 		ortlog.Errorw("failed to create session", "modelPath", modelPath, "error", err)
 		return nil, err
@@ -230,12 +271,37 @@ func (s *Session) getOutputName(index int) (string, error) {
 }
 
 func (s *Session) Destroy() {
-	if s.handle != 0 {
-		ortlog.Debugw("destroying ONNX Runtime session", "inputs", s.InputNames, "outputs", s.OutputNames)
-		s.engine.funcs.releaseSession(s.handle)
-		s.handle = 0
-	}
+	s.destroyOnce.Do(func() {
+		if s.handle != 0 {
+			ortlog.Debugw("destroying ONNX Runtime session", "inputs", s.InputNames, "outputs", s.OutputNames)
+			s.engine.funcs.releaseSession(s.handle)
+			s.handle = 0
+		}
+	})
 }
+
+// ReleaseCapturedGraph releases a previously captured graph and its associated
+// resources for the given graph annotation ID.
+//
+// When graph capture is enabled, the EP records information during initial runs
+// (e.g., GPU commands) and replays them on subsequent runs. This function frees
+// the captured resources for a specific graph annotation ID, reclaiming memory.
+//
+// Requires ONNX Runtime 1.27+ (ORT_API_VERSION 27). Returns an error if the
+// loaded library does not support this API.
+func (s *Session) ReleaseCapturedGraph(graphAnnotationID int) error {
+	if s.engine.funcs.sessionReleaseCapturedGraph == nil {
+		return fmt.Errorf("ReleaseCapturedGraph requires ONNX Runtime 1.27+ (current API version: %d)", s.engine.version)
+	}
+	status := s.engine.funcs.sessionReleaseCapturedGraph(s.handle, int32(graphAnnotationID))
+	return s.engine.checkStatus(status)
+}
+
+// NOTE: KernelContext_GetSyncStream (OrtApi index 419, since v1.28) is intentionally
+// not wrapped at the Go level. It operates on OrtKernelContext*, which is only
+// available inside custom-op Compute callbacks — a use case raven-onnxruntime does
+// not support (it is an inference-only binding). The function pointer is present in
+// the ortApi struct for ABI completeness but is not registered in apiFuncs.
 
 func (s *Session) GetInputShape(index int) ([]int64, error) {
 	var typeInfo TypeInfoHandle
@@ -259,7 +325,10 @@ func (s *Session) GetInputShape(index int) ([]int64, error) {
 	if tensorInfo == 0 {
 		return nil, fmt.Errorf("input %d cast to tensor info returned nil", index)
 	}
-	defer s.engine.funcs.releaseTensorTypeAndShapeInfo(tensorInfo)
+	// NOTE: Do NOT call releaseTensorTypeAndShapeInfo(tensorInfo) here.
+	// CastTypeInfoToTensorInfo returns a borrowed reference owned by typeInfo.
+	// The deferred releaseTypeInfo(typeInfo) above already handles cleanup.
+	// Releasing tensorInfo separately would cause a double-free.
 
 	var dimCount uintptr
 	status = s.engine.funcs.getDimensionsCount(tensorInfo, &dimCount)
@@ -268,9 +337,11 @@ func (s *Session) GetInputShape(index int) ([]int64, error) {
 	}
 
 	dims := make([]int64, dimCount)
-	status = s.engine.funcs.getDimensions(tensorInfo, &dims[0], dimCount)
-	if err := s.engine.checkStatus(status); err != nil {
-		return nil, fmt.Errorf("failed to get dimensions: %w", err)
+	if dimCount > 0 {
+		status = s.engine.funcs.getDimensions(tensorInfo, &dims[0], dimCount)
+		if err := s.engine.checkStatus(status); err != nil {
+			return nil, fmt.Errorf("failed to get dimensions: %w", err)
+		}
 	}
 
 	return dims, nil
@@ -327,8 +398,18 @@ func (s *Session) Run(inputs map[string]*Value) (map[string]*Value, error) {
 	// keep slices alive until the C call completes
 	runtime.KeepAlive(inputNameSlices)
 	runtime.KeepAlive(s.outputNameSlices)
+	// Keep input Values alive so their underlying data is not GC'd
+	// while ORT reads it during the run call above.
+	runtime.KeepAlive(inputs)
 
 	if err := s.engine.checkStatus(status); err != nil {
+		// Release any output handles that may have been partially created
+		// before the run failed, to avoid leaking ORT Value handles.
+		for _, h := range outputHandles {
+			if h != 0 {
+				s.engine.funcs.releaseValue(h)
+			}
+		}
 		ortlog.Errorw("inference failed",
 			"inputs", mapKeys(inputs),
 			"outputs", s.OutputNames,

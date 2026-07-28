@@ -5,6 +5,7 @@ import (
 	"image"
 
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
+	"github.com/DavidSche/raven-onnxruntime/ort/ortlog"
 	"github.com/DavidSche/raven-onnxruntime/vision"
 	"github.com/up-zero/gotool/convertutil"
 	"github.com/up-zero/gotool/imageutil"
@@ -94,6 +95,9 @@ func (e *Engine) EncodeImage(img image.Image) (*ImageContext, error) {
 	}
 	bounds := img.Bounds()
 	origW, origH := bounds.Dx(), bounds.Dy()
+	if origW == 0 || origH == 0 {
+		return nil, fmt.Errorf("invalid image dimensions: %dx%d", origW, origH)
+	}
 
 	scaleX := float32(inputSize) / float32(origW)
 	scaleY := float32(inputSize) / float32(origH)
@@ -129,7 +133,11 @@ func (e *Engine) EncodeImage(img image.Image) (*ImageContext, error) {
 					vmax = v
 				}
 			}
-			fmt.Printf("[SAM3 VIS] %s shape=%v range=[%.4f,%.4f]\n", name, shape, vmin, vmax)
+			ortlog.Debugw("sam3 vision output",
+				"name", name,
+				"shape", shape,
+				"min", vmin,
+				"max", vmax)
 		}
 	}
 
@@ -187,10 +195,13 @@ func (e *Engine) encodeDummyText() (*ort.Value, *ort.Value, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("text encoder run failed: %w", err)
 	}
+	defer ort.DestroyValues(outputs)
 
 	textFeatShape, _ := outputs["text_features"].GetShape()
 	textMaskShape, _ := outputs["text_mask"].GetShape()
-	fmt.Printf("[SAM3 TEXT] features shape=%v mask shape=%v\n", textFeatShape, textMaskShape)
+	ortlog.Debugw("sam3 text output",
+		"featuresShape", textFeatShape,
+		"maskShape", textMaskShape)
 
 	return outputs["text_features"], outputs["text_mask"], nil
 }
@@ -287,6 +298,9 @@ func (ctx *ImageContext) DecodeRaw(points []Point) (*Result, error) {
 
 	start := bestIdx * pixelsPerMask
 	end := start + pixelsPerMask
+	if end > len(predMasks) {
+		return nil, fmt.Errorf("mask index out of range: start=%d end=%d len=%d", start, end, len(predMasks))
+	}
 	bestMaskLogits := predMasks[start:end]
 
 	finalMask := upscaleMaskLogits(bestMaskLogits, logitsH, logitsW, ctx.origW, ctx.origH)

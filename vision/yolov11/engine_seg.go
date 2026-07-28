@@ -51,7 +51,7 @@ func (e *SegEngine) Destroy() {
 // Predict executes segmentation inference
 func (e *SegEngine) Predict(img image.Image) ([]SegResult, error) {
 	// preprocess
-	inputTensor, params, err := preprocess(img, e.config.InputSize, e.session)
+	inputTensor, params, err := preprocess(img, e.config.InputSize, e.session, e.config.PreprocessConfig)
 	if err != nil {
 		return nil, fmt.Errorf("preprocess failed: %w", err)
 	}

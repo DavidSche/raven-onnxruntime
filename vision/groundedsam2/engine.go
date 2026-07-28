@@ -10,6 +10,7 @@ import (
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
 	"github.com/DavidSche/raven-onnxruntime/ort/ortlog"
 	"github.com/DavidSche/raven-onnxruntime/vision"
+	"github.com/DavidSche/raven-onnxruntime/vision/tokenizer"
 	"github.com/up-zero/gotool/convertutil"
 )
 
@@ -151,7 +152,7 @@ func (e *SegEngine) runGroundingDINO(img image.Image, captions []string) (
 	params imageParams, err error,
 ) {
 	// 1. 图像编码
-	inputTensor, params, err := preprocessImage(e.gdinoImageEncoder, img, e.config.InputSize)
+	inputTensor, params, err := preprocessImage(e.gdinoImageEncoder, img, e.config.InputSize, e.config.PreprocessConfig)
 	if err != nil {
 		return nil, nil, nil, params, fmt.Errorf("preprocess image failed: %w", err)
 	}
@@ -170,35 +171,23 @@ func (e *SegEngine) runGroundingDINO(img image.Image, captions []string) (
 	}()
 
 	// 2. 文本编码
-	inputIds, attentionMask, tokenTypeIds, textSelfAttnMasks, positionIds, err :=
-		tokenizeCaptions(e.gdinoTextEncoder, captions, e.config.MaxTextLen)
+	textBundle, err := tokenizer.Acquire(e.gdinoTextEncoder, captions, e.config.MaxTextLen)
 	if err != nil {
 		return nil, nil, nil, params, fmt.Errorf("tokenize captions failed: %w", err)
 	}
-	defer func() {
-		if inputIds != nil {
-			inputIds.Destroy()
-		}
-		if attentionMask != nil {
-			attentionMask.Destroy()
-		}
-		if tokenTypeIds != nil {
-			tokenTypeIds.Destroy()
-		}
-		if textSelfAttnMasks != nil {
-			textSelfAttnMasks.Destroy()
-		}
-		if positionIds != nil {
-			positionIds.Destroy()
-		}
-	}()
+	defer textBundle.Destroy()
+	if textBundle.Source == tokenizer.SourcePlaceholder {
+		ortlog.Warnw("groundedsam2 using placeholder tokenizer fallback",
+			"modelPath", e.config.ModelPath,
+			"maxTextLen", e.config.MaxTextLen)
+	}
 
 	textInputs := map[string]*ort.Value{
-		"input_ids":                 inputIds,
-		"attention_mask":            attentionMask,
-		"token_type_ids":            tokenTypeIds,
-		"text_self_attention_masks": textSelfAttnMasks,
-		"position_ids":              positionIds,
+		"input_ids":                 textBundle.InputIds,
+		"attention_mask":            textBundle.AttentionMask,
+		"token_type_ids":            textBundle.TokenTypeIds,
+		"text_self_attention_masks": textBundle.TextSelfAttnMasks,
+		"position_ids":              textBundle.PositionIds,
 	}
 
 	gdinoTxtOutput, err := e.gdinoTextEncoder.Run(textInputs)
@@ -243,7 +232,7 @@ func (e *SegEngine) runGroundingDINO(img image.Image, captions []string) (
 // runSAM2 运行 SAM-2 分割流程
 func (e *SegEngine) runSAM2(img image.Image, boxes []image.Rectangle) ([]*image.Gray, []float32, error) {
 	// 1. SAM-2 图像编码
-	sam2Input, sam2Params, err := preprocessImage(e.sam2ImageEncoder, img, e.config.Sam2ImageSize)
+	sam2Input, sam2Params, err := preprocessImage(e.sam2ImageEncoder, img, e.config.Sam2ImageSize, e.config.PreprocessConfig)
 	if err != nil {
 		return nil, nil, fmt.Errorf("sam2 preprocess image failed: %w", err)
 	}

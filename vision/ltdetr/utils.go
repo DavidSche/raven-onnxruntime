@@ -1,6 +1,7 @@
 package ltdetr
 
 import (
+	"fmt"
 	"image"
 	"image/draw"
 	"math"
@@ -8,7 +9,7 @@ import (
 	"strings"
 
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
-	"github.com/up-zero/gotool/imageutil"
+	"github.com/DavidSche/raven-onnxruntime/vision"
 )
 
 var imagenetMeans = [3]float32{0.485, 0.456, 0.406}
@@ -230,36 +231,33 @@ func decodeVarint(data []byte, pos int) (uint64, int) {
 
 type imageParams struct {
 	origW, origH int
+	padX, padY   int
 }
 
-func preprocess(img image.Image, inputSize int, session *ort.Session) (*ort.Value, imageParams, error) {
+func preprocess(img image.Image, inputSize int, session *ort.Session, ppCfg vision.PreprocessConfig) (*ort.Value, imageParams, error) {
+	if img == nil {
+		return nil, imageParams{}, fmt.Errorf("input image is nil")
+	}
 	bounds := img.Bounds()
 	params := imageParams{
 		origW: bounds.Dx(),
 		origH: bounds.Dy(),
 	}
 
-	resized := imageutil.Resize(img, inputSize, inputSize)
+	means, stds := vision.GetNormalizeParams(ppCfg)
+	resized := vision.Resize(img, inputSize, inputSize, ppCfg.Interpolation)
 
 	data := make([]float32, 3*inputSize*inputSize)
 	planeSize := inputSize * inputSize
-
-	for y := 0; y < inputSize; y++ {
-		for x := 0; x < inputSize; x++ {
-			r, g, b, _ := resized.At(x, y).RGBA()
-
-			idx := y*inputSize + x
-			data[idx] = (float32(r)/65535.0 - imagenetMeans[0]) / imagenetStds[0]
-			data[planeSize+idx] = (float32(g)/65535.0 - imagenetMeans[1]) / imagenetStds[1]
-			data[2*planeSize+idx] = (float32(b)/65535.0 - imagenetMeans[2]) / imagenetStds[2]
-		}
+	if err := vision.FillCHWFromImage(data, resized, planeSize, inputSize, inputSize, inputSize, means, stds); err != nil {
+		return nil, imageParams{}, fmt.Errorf("failed to fill CHW data: %w", err)
 	}
 
 	tensor, err := session.NewTensor([]int64{1, 3, int64(inputSize), int64(inputSize)}, data)
 	return tensor, params, err
 }
 
-func preprocessBatch(imgs []image.Image, inputSize int, session *ort.Session) (*ort.Value, []imageParams, error) {
+func preprocessBatch(imgs []image.Image, inputSize int, session *ort.Session, ppCfg vision.PreprocessConfig) (*ort.Value, []imageParams, error) {
 	if len(imgs) == 0 {
 		return nil, nil, nil
 	}
@@ -271,24 +269,21 @@ func preprocessBatch(imgs []image.Image, inputSize int, session *ort.Session) (*
 	paramsList := make([]imageParams, batchSize)
 
 	for i, img := range imgs {
+		if img == nil {
+			return nil, nil, fmt.Errorf("input image at index %d is nil", i)
+		}
 		bounds := img.Bounds()
 		paramsList[i] = imageParams{
 			origW: bounds.Dx(),
 			origH: bounds.Dy(),
 		}
 
-		resized := imageutil.Resize(img, inputSize, inputSize)
+		meansb, stdsb := vision.GetNormalizeParams(ppCfg)
+		resized := vision.Resize(img, inputSize, inputSize, ppCfg.Interpolation)
 
 		base := i * sampleSize
-		for y := 0; y < inputSize; y++ {
-			for x := 0; x < inputSize; x++ {
-				r, g, b, _ := resized.At(x, y).RGBA()
-
-				spatialIdx := y*inputSize + x
-				data[base+spatialIdx] = (float32(r)/65535.0 - imagenetMeans[0]) / imagenetStds[0]
-				data[base+planeSize+spatialIdx] = (float32(g)/65535.0 - imagenetMeans[1]) / imagenetStds[1]
-				data[base+2*planeSize+spatialIdx] = (float32(b)/65535.0 - imagenetMeans[2]) / imagenetStds[2]
-			}
+		if err := vision.FillCHWFromImage(data[base:base+sampleSize], resized, planeSize, inputSize, inputSize, inputSize, meansb, stdsb); err != nil {
+			return nil, nil, fmt.Errorf("failed to fill CHW data for image %d: %w", i, err)
 		}
 	}
 

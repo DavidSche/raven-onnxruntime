@@ -89,7 +89,7 @@ func (e *PoseEngine) PredictBatch(imgs []image.Image) ([][]PoseResult, error) {
 
 	// preprocess
 	preprocessStart := time.Now()
-	inputTensor, paramsList, err := preprocessBatch(imgs, e.config.InputSize, e.session)
+	inputTensor, paramsList, err := preprocessBatch(imgs, e.config.InputSize, e.session, e.config.PreprocessConfig)
 	if err != nil {
 		return nil, fmt.Errorf("preprocess failed: %w", err)
 	}
@@ -111,6 +111,7 @@ func (e *PoseEngine) PredictBatch(imgs []image.Image) ([][]PoseResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inference failed: %w", err)
 	}
+	defer ort.DestroyValues(outputValues)
 	runElapsed := time.Since(runStart)
 
 	// get first output (compatible with different output names)
