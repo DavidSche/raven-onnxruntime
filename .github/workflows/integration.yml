@@ -1,0 +1,127 @@
+# Integration test workflow for raven-onnxruntime
+#
+# Downloads the ONNX Runtime shared library and runs the full test suite,
+# including all tests that exercise real ORT API bindings.
+#
+# Triggers:
+#   - On push/merge to main (post-merge validation)
+#   - On demand via workflow_dispatch (manual trigger from the Actions tab)
+#   - On any tag push matching v*
+
+name: Integration
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      ort_version:
+        description: "ONNX Runtime version (e.g., 1.28.0)"
+        required: false
+        default: "1.28.0"
+      run_model_tests:
+        description: "Also run model-dependent tests (requires model files)"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ORT_VERSION: ${{ inputs.ort_version || '1.28.0' }}
+
+jobs:
+  integration:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # ---------------------------------------------------------------
+      # Download & extract ONNX Runtime shared library
+      # ---------------------------------------------------------------
+      - name: Download ONNX Runtime (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          PKG="onnxruntime-linux-x64-${{ env.ORT_VERSION }}"
+          curl -fsSLO "https://github.com/microsoft/onnxruntime/releases/download/v${{ env.ORT_VERSION }}/$PKG.tgz"
+          tar xzf "$PKG.tgz"
+          echo "RAVEN_ORT_LIB_PATH=$PWD/$PKG/lib/libonnxruntime.so" >> $GITHUB_ENV
+          echo "ORT_DIR=$PWD/$PKG" >> $GITHUB_ENV
+
+      - name: Download ONNX Runtime (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          PKG="onnxruntime-osx-universal2-${{ env.ORT_VERSION }}"
+          curl -fsSLO "https://github.com/microsoft/onnxruntime/releases/download/v${{ env.ORT_VERSION }}/$PKG.tgz"
+          tar xzf "$PKG.tgz"
+          echo "RAVEN_ORT_LIB_PATH=$PWD/$PKG/lib/libonnxruntime.dylib" >> $GITHUB_ENV
+          echo "ORT_DIR=$PWD/$PKG" >> $GITHUB_ENV
+
+      - name: Download ONNX Runtime (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $pkg = "onnxruntime-win-x64-${{ env.ORT_VERSION }}"
+          curl.exe -fsSLO "https://github.com/microsoft/onnxruntime/releases/download/v${{ env.ORT_VERSION }}/$pkg.zip"
+          Expand-Archive -Path "$pkg.zip" -DestinationPath .
+          "RAVEN_ORT_LIB_PATH=$((Get-Item -Path ".\$pkg\lib\onnxruntime.dll").FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ORT_DIR=$((Get-Item -Path ".\$pkg").FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      # ---------------------------------------------------------------
+      # Download model files (optional, only when requested)
+      # ---------------------------------------------------------------
+      - name: Download model files
+        if: inputs.run_model_tests
+        shell: bash
+        run: |
+          echo "::group::Download model files"
+          # Set RAVEN_MODELS_DIR so tests find the models
+          echo "RAVEN_MODELS_DIR=$PWD/models" >> $GITHUB_ENV
+          echo "::endgroup::"
+
+      # ---------------------------------------------------------------
+      # Build
+      # ---------------------------------------------------------------
+      - name: Build
+        run: go build ./...
+
+      - name: Go vet
+        run: go vet ./...
+
+      # ---------------------------------------------------------------
+      # Run ORT-level tests (verify API bindings, session, value, etc.)
+      # ---------------------------------------------------------------
+      - name: Test ort package
+        run: go test -v -count=1 ./ort/...
+
+      # ---------------------------------------------------------------
+      # Run all tests (including model-dependent, if models available)
+      # ---------------------------------------------------------------
+      - name: Test all packages
+        run: go test -v -count=1 ./...
+
+      # ---------------------------------------------------------------
+      # Platform info (useful for debugging test failures)
+      # ---------------------------------------------------------------
+      - name: Print platform & ORT info
+        shell: bash
+        run: |
+          echo "OS:       ${{ runner.os }}"
+          echo "Go:       $(go version)"
+          echo "ORT:      ${{ env.ORT_VERSION }}"
+          echo "ORT lib:  ${{ env.RAVEN_ORT_LIB_PATH }}"
+          ls -la "${{ env.RAVEN_ORT_LIB_PATH }}" 2>/dev/null || echo "LIB NOT FOUND"

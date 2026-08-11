@@ -1,0 +1,92 @@
+# CI workflow for raven-onnxruntime
+#
+# Builds, lints, vets, and runs unit tests on every push/PR.
+# Unit tests that require the ONNX Runtime shared library are skipped automatically
+# by using a targeted test-run filter. A separate integration workflow runs the
+# full test suite with a real ONNX Runtime download.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ------------------------------------------------------------------
+  # Lint  —  golangci-lint (Ubuntu only; fast enough for one runner)
+  # ------------------------------------------------------------------
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          # Only show new issues on PRs; show all issues on push/merge.
+          only-new-issues: ${{ github.event_name == 'pull_request' }}
+
+  # ------------------------------------------------------------------
+  # Build  —  cross-platform compilation check
+  # ------------------------------------------------------------------
+  build:
+    needs: [lint]
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Go vet
+        run: go vet ./...
+
+  # ------------------------------------------------------------------
+  # Unit Tests  —  pure-Go tests that do NOT need the ONNX Runtime DLL
+  # ------------------------------------------------------------------
+  unit-test:
+    needs: [lint]
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Pure-Go unit tests that don't need an ONNX Runtime binary.
+      # The regex pattern is matched against test function names.
+      - name: Run unit tests
+        run: go test -v -count=1 -run 'TestFillCHW|TestNMS|TestComputeIOU|TestDrawer_DrawText' ./...
+
+      # Also compile all test packages to catch compilation errors early.
+      - name: Compile-check all test packages
+        run: go test -run '^$' ./...
