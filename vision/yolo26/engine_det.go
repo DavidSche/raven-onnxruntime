@@ -45,6 +45,16 @@ func NewDetEngine(cfg Config) (*DetEngine, error) {
 		return nil, fmt.Errorf("failed to create ONNX session: %w", err)
 	}
 
+	// 自动适配模型真实输入尺寸（与 NewOBBEngine 相同的 GetInputShape 自适应路径）：
+	// 静态输入模型（如 yolo26x.onnx 固定 640×640 输入）必须按模型输入形状预处理，
+	// 否则会话运行会因张量形状不匹配而失败；动态输入模型（n/s/m/l 官方导出 imgsz=1280）
+	// 接受任意尺寸，沿用配置的 InputSize。
+	if size := staticSquareInputSize(session); size > 0 && size != cfg.InputSize {
+		ortlog.Infow("YOLO26 det engine auto-adapting input size to static model shape",
+			"modelPath", cfg.ModelPath, "configured", cfg.InputSize, "actual", size)
+		cfg.InputSize = size
+	}
+
 	ortlog.Infow("YOLO26 detection engine created successfully",
 		"modelPath", cfg.ModelPath,
 		"inputs", session.InputNames,

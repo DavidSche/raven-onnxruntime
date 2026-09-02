@@ -167,10 +167,10 @@ func (e *PoseEngine) parseCandidates(data []float32, channels, anchors int, para
 		y1 := cy - h/2
 		x2 := cx + w/2
 		y2 := cy + h/2
-		origX1 := min(max(0, int(x1/params.scale)), params.origW)
-		origY1 := min(max(0, int(y1/params.scale)), params.origH)
-		origX2 := min(max(0, int(x2/params.scale)), params.origW)
-		origY2 := min(max(0, int(y2/params.scale)), params.origH)
+		origX1 := min(max(0, int((x1-float32(params.padX))/params.scale)), params.origW)
+		origY1 := min(max(0, int((y1-float32(params.padY))/params.scale)), params.origH)
+		origX2 := min(max(0, int((x2-float32(params.padX))/params.scale)), params.origW)
+		origY2 := min(max(0, int((y2-float32(params.padY))/params.scale)), params.origH)
 
 		// store raw keypoints data
 		rawKpts := make([]float32, numKptValues)
@@ -200,8 +200,8 @@ func (e *PoseEngine) decodeKeyPoints(raw []float32, params imageParams) []KeyPoi
 		conf := raw[idx+2]
 
 		// map coordinates back to original image
-		origX := min(max(0, int(x/params.scale)), params.origW)
-		origY := min(max(0, int(y/params.scale)), params.origH)
+		origX := min(max(0, int((x-float32(params.padX))/params.scale)), params.origW)
+		origY := min(max(0, int((y-float32(params.padY))/params.scale)), params.origH)
 
 		kpts[i] = KeyPoint{
 			X:     origX,

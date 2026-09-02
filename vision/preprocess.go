@@ -88,6 +88,101 @@ func fillCHWFromPixels(data []float32, pix []byte, stride, channels, planeSize, 
 	return nil
 }
 
+// ResizeTorchBilinear resizes img to width×height using PyTorch's bilinear
+// sampling with align_corners=False — the exact algorithm behind
+// ``torchvision.transforms.functional.resize(antialias=False)`` that
+// rf-detr's predict() pipeline uses. Plain bilinear kernels (PIL,
+// x/image/draw.BiLinear) map output pixels to source coordinates with a
+// different convention, which after a large downscale can shift normalized
+// pixels by ~0.1+ (normalized space) and flip borderline detection
+// confidence across a threshold — Transformer engines (rfdetr / ltdetr /
+// edgecrafter) should therefore use this instead of Resize().
+//
+// Sampling formula (ATen upsample_bilinear2d, align_corners=False):
+//
+//	scale = in / out
+//	src   = clamp((dst + 0.5) * scale - 0.5, min=0)
+//	i0    = floor(src); frac = src - i0; i1 = min(i0+1, in-1)
+//	val   = (1-frac_h)*((1-frac_w)*p[i0][j0] + frac_w*p[i0][j1])
+//	      + frac_h   *((1-frac_w)*p[i1][j0] + frac_w*p[i1][j1])
+//
+// Interpolation is computed in float32 (ATen's accscalar_t<float>), and the
+// result is rounded back to uint8 so callers keep the RGBA pipeline.
+func ResizeTorchBilinear(img image.Image, width, height int) *image.RGBA {
+	srcW, srcH := img.Bounds().Dx(), img.Bounds().Dy()
+
+	// Normalize the source into an *image.RGBA with a (0,0) origin.
+	src := image.NewRGBA(image.Rect(0, 0, srcW, srcH))
+	draw.Draw(src, src.Bounds(), img, img.Bounds().Min, draw.Src)
+
+	dst := image.NewRGBA(image.Rect(0, 0, width, height))
+	if srcW == 0 || srcH == 0 || width == 0 || height == 0 {
+		return dst
+	}
+
+	rh := float32(srcH) / float32(height)
+	rw := float32(srcW) / float32(width)
+
+	type coord struct {
+		i0, i1 int32
+		frac   float32
+	}
+	rows := make([]coord, height)
+	for oh := 0; oh < height; oh++ {
+		r := (float32(oh)+0.5)*rh - 0.5
+		if r < 0 {
+			r = 0
+		}
+		i0 := int32(r)
+		i1 := i0 + 1
+		if i1 > int32(srcH)-1 {
+			i1 = int32(srcH) - 1
+		}
+		rows[oh] = coord{i0: i0, i1: i1, frac: r - float32(i0)}
+	}
+	cols := make([]coord, width)
+	for ow := 0; ow < width; ow++ {
+		c := (float32(ow)+0.5)*rw - 0.5
+		if c < 0 {
+			c = 0
+		}
+		i0 := int32(c)
+		i1 := i0 + 1
+		if i1 > int32(srcW)-1 {
+			i1 = int32(srcW) - 1
+		}
+		cols[ow] = coord{i0: i0, i1: i1, frac: c - float32(i0)}
+	}
+
+	for oh := 0; oh < height; oh++ {
+		r := rows[oh]
+		h0l := 1 - r.frac
+		rowA := src.Pix[int(r.i0)*src.Stride:]
+		rowB := src.Pix[int(r.i1)*src.Stride:]
+		dstRow := dst.Pix[oh*dst.Stride:]
+		for ow := 0; ow < width; ow++ {
+			c := cols[ow]
+			w0l := 1 - c.frac
+			offA := int(c.i0) * 4
+			offB := int(c.i1) * 4
+			for ch := 0; ch < 3; ch++ {
+				// Interpolate in [0,1] float32 exactly like ATen (input pixels are
+				// divided by 255 before upsampling), then scale back for uint8.
+				v11 := float32(rowA[offA+ch]) / 255.0
+				v12 := float32(rowA[offB+ch]) / 255.0
+				v21 := float32(rowB[offA+ch]) / 255.0
+				v22 := float32(rowB[offB+ch]) / 255.0
+				top := w0l*v11 + c.frac*v12
+				bot := w0l*v21 + c.frac*v22
+				val := h0l*top + r.frac*bot
+				dstRow[ow*4+ch] = uint8(val*255 + 0.5)
+			}
+			dstRow[ow*4+3] = 0xff
+		}
+	}
+	return dst
+}
+
 // ─────────────────────────────────────────────────────
 // Letterbox 预处理
 // ─────────────────────────────────────────────────────

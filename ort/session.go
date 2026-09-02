@@ -321,7 +321,11 @@ func (s *Session) GetInputShape(index int) ([]int64, error) {
 		return nil, fmt.Errorf("input %d is not a tensor type (onnxType=%d)", index, onnxType)
 	}
 
-	tensorInfo := s.engine.funcs.castTypeInfoToTensorInfo(typeInfo)
+	var tensorInfo TensorTypeAndShapeInfoHandle
+	status = s.engine.funcs.castTypeInfoToTensorInfo(typeInfo, &tensorInfo)
+	if err := s.engine.checkStatus(status); err != nil {
+		return nil, fmt.Errorf("failed to cast type info to tensor info: %w", err)
+	}
 	if tensorInfo == 0 {
 		return nil, fmt.Errorf("input %d cast to tensor info returned nil", index)
 	}

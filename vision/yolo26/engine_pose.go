@@ -48,6 +48,16 @@ func NewPoseEngine(cfg Config) (*PoseEngine, error) {
 		return nil, fmt.Errorf("failed to create ONNX session: %w", err)
 	}
 
+	// 自动适配模型真实输入尺寸（与 NewOBBEngine 相同的 GetInputShape 自适应路径）：
+	// 静态输入模型（如 yolo26x-pose.onnx 固定 640×640 输入）必须按模型输入形状预处理，
+	// 否则会话运行会因张量形状不匹配而失败；动态输入模型（n/s/m/l 官方导出 imgsz=1280）
+	// 接受任意尺寸，沿用配置的 InputSize。
+	if size := staticSquareInputSize(session); size > 0 && size != cfg.InputSize {
+		ortlog.Infow("YOLO26 pose engine auto-adapting input size to static model shape",
+			"modelPath", cfg.ModelPath, "configured", cfg.InputSize, "actual", size)
+		cfg.InputSize = size
+	}
+
 	ortlog.Infow("YOLO26 pose engine created successfully",
 		"modelPath", cfg.ModelPath,
 		"inputs", session.InputNames,
@@ -267,10 +277,10 @@ func (e *PoseEngine) postprocess(data []float32, shape []int64, params imagePara
 		x2 := data[offset+2]
 		y2 := data[offset+3]
 
-		origX1 := max(0, int(x1/params.scale))
-		origY1 := max(0, int(y1/params.scale))
-		origX2 := min(params.origW, int(x2/params.scale))
-		origY2 := min(params.origH, int(y2/params.scale))
+		origX1 := max(0, int((x1-float32(params.padX))/params.scale))
+		origY1 := max(0, int((y1-float32(params.padY))/params.scale))
+		origX2 := min(params.origW, int((x2-float32(params.padX))/params.scale))
+		origY2 := min(params.origH, int((y2-float32(params.padY))/params.scale))
 
 		kptLen := attributes - 6
 		if offset+6+kptLen > len(data) {
@@ -343,10 +353,10 @@ func (e *PoseEngine) postprocessChannelFirst(data []float32, channels, anchors i
 		y1 := cy - h/2
 		x2 := cx + w/2
 		y2 := cy + h/2
-		origX1 := max(0, int(x1/params.scale))
-		origY1 := max(0, int(y1/params.scale))
-		origX2 := min(params.origW, int(x2/params.scale))
-		origY2 := min(params.origH, int(y2/params.scale))
+		origX1 := max(0, int((x1-float32(params.padX))/params.scale))
+		origY1 := max(0, int((y1-float32(params.padY))/params.scale))
+		origX2 := min(params.origW, int((x2-float32(params.padX))/params.scale))
+		origY2 := min(params.origH, int((y2-float32(params.padY))/params.scale))
 
 		rawKpts := make([]float32, numKptValues)
 		for k := 0; k < numKptValues; k++ {
@@ -395,8 +405,8 @@ func (e *PoseEngine) decodeKeyPoints(raw []float32, params imageParams) []KeyPoi
 		conf := raw[idx+2]
 
 		// map coordinates back to original image
-		origX := min(max(0, int(x/params.scale)), params.origW)
-		origY := min(max(0, int(y/params.scale)), params.origH)
+		origX := min(max(0, int((x-float32(params.padX))/params.scale)), params.origW)
+		origY := min(max(0, int((y-float32(params.padY))/params.scale)), params.origH)
 
 		kpts[i] = KeyPoint{
 			X:     origX,

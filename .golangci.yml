@@ -1,0 +1,46 @@
+linters:
+  enable:
+    - gofmt
+    - goimports
+    - govet
+    - staticcheck
+    - errcheck
+    - unused
+    - misspell
+    - revive
+    - ineffassign
+    - gosimple
+    - prealloc
+  disable:
+    - typecheck
+
+linters-settings:
+  gofmt:
+    simplify: true
+  goimports:
+    local-prefixes: github.com/DavidSche/raven-onnxruntime
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+        arguments:
+          - disableStutteringCheck
+  staticcheck:
+    checks:
+      - all
+      - -SA1019 # allow deprecated identifiers (sometimes needed for backward compat)
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  # Exclude generated files and test fixtures
+  exclude-files:
+    - ".*\\.pb\\.go$"
+  # Skip auto-generated directories
+  exclude-dirs:
+    - vendor
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly

@@ -199,10 +199,10 @@ func (e *SegEngine) parseCandidates(data []float32, channels, anchors int, param
 		y1 := cy - h/2
 		x2 := cx + w/2
 		y2 := cy + h/2
-		origX1 := max(0, int(x1/params.scale))
-		origY1 := max(0, int(y1/params.scale))
-		origX2 := min(params.origW, int(x2/params.scale))
-		origY2 := min(params.origH, int(y2/params.scale))
+		origX1 := max(0, int((x1-float32(params.padX))/params.scale))
+		origY1 := max(0, int((y1-float32(params.padY))/params.scale))
+		origX2 := min(params.origW, int((x2-float32(params.padX))/params.scale))
+		origY2 := min(params.origH, int((y2-float32(params.padY))/params.scale))
 
 		cands = append(cands, candidate{
 			box:        [4]float32{x1, y1, x2, y2},
@@ -237,8 +237,8 @@ func (e *SegEngine) decodeMask(cand candidate, protos []float32, c, h, w int, pa
 	for y := origBox.Min.Y; y < origBox.Max.Y; y++ {
 		for x := origBox.Min.X; x < origBox.Max.X; x++ {
 			// map back to 640 scale
-			inputX := float32(x) * params.scale
-			inputY := float32(y) * params.scale
+			inputX := float32(x)*params.scale + float32(params.padX)
+			inputY := float32(y)*params.scale + float32(params.padY)
 
 			// map back to 160 mask scale
 			mx := int(inputX / maskStride)

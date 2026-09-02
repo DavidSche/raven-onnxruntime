@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"math"
 	"os"
+	"strconv"
 	"strings"
 
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
@@ -52,10 +53,62 @@ func detectInputSizeAndDynamicBatch(modelPath string) (int, bool) {
 			return size, false
 		}
 	}
-	if size, dynamic, err := parseOnnxInputSizeAndDynamicBatch(modelPath); err == nil && size > 0 {
-		return size, dynamic
+	if size, dynamic, err := parseOnnxInputSizeAndDynamicBatch(modelPath); err == nil {
+		if size > 0 {
+			return size, dynamic
+		}
+		// Dynamic-shape exports (symbolic H/W dims, e.g. the raven-rfdetr
+		// exporter's dynamic_axes={0:batch,2:height,3:width}) cannot report a
+		// concrete input size from the graph input dims alone. Fall back to the
+		// `resolution` metadata prop written by the raven-rfdetr exporter; the
+		// parsed dynamicBatch flag is kept (batch may still be dynamic).
+		if metaSize, ok := parseOnnxMetadataResolution(modelPath); ok && metaSize > 0 {
+			return metaSize, dynamic
+		}
 	}
 	return 640, false
+}
+
+// parseOnnxMetadataResolution reads the top-level ModelProto ``metadata_props``
+// (field 14, repeated StringStringEntryProto: key=1, value=2) and returns the
+// integer ``resolution`` prop when present. Used as a fallback for models whose
+// graph input dims are symbolic (dynamic H/W) so the engine still feeds the
+// resolution the graph was exported at.
+func parseOnnxMetadataResolution(modelPath string) (int, bool) {
+	data, err := os.ReadFile(modelPath)
+	if err != nil {
+		return 0, false
+	}
+	s := newProtobufScanner(data)
+	for s.next() {
+		if s.fieldNum == 14 && s.wireType == 2 {
+			key, val, ok := parseStringStringEntry(s.bytes())
+			if ok && key == "resolution" {
+				n, err := strconv.Atoi(strings.TrimSpace(val))
+				if err == nil && n > 0 {
+					return n, true
+				}
+				return 0, false
+			}
+		}
+	}
+	return 0, false
+}
+
+func parseStringStringEntry(data []byte) (string, string, bool) {
+	s := newProtobufScanner(data)
+	var key, val string
+	var hasKey, hasVal bool
+	for s.next() {
+		if s.fieldNum == 1 && s.wireType == 2 {
+			key = string(s.bytes())
+			hasKey = true
+		} else if s.fieldNum == 2 && s.wireType == 2 {
+			val = string(s.bytes())
+			hasVal = true
+		}
+	}
+	return key, val, hasKey && hasVal
 }
 
 func parseOnnxInputSize(modelPath string) (int, error) {
@@ -265,7 +318,10 @@ func preprocess(img image.Image, inputSize int, session *ort.Session, ppCfg visi
 	}
 
 	means, stds := vision.GetNormalizeParams(ppCfg)
-	resized := vision.Resize(img, inputSize, inputSize, ppCfg.Interpolation)
+	// rf-detr predict() resizes with torchvision F.resize(antialias=False), i.e.
+	// bilinear align_corners=False — use the matching kernel so normalized
+	// pixels (and borderline confidence scores) stay consistent with PyTorch.
+	resized := vision.ResizeTorchBilinear(img, inputSize, inputSize)
 
 	data := make([]float32, 3*inputSize*inputSize)
 	if err := vision.FillCHWFromImage(data, resized, inputSize*inputSize, inputSize, inputSize, inputSize, means, stds); err != nil {
@@ -298,7 +354,8 @@ func preprocessBatch(imgs []image.Image, inputSize int, session *ort.Session, pp
 		}
 
 		means, stds := vision.GetNormalizeParams(ppCfg)
-		resized := vision.Resize(img, inputSize, inputSize, ppCfg.Interpolation)
+		// See preprocess(): match torchvision F.resize(antialias=False).
+		resized := vision.ResizeTorchBilinear(img, inputSize, inputSize)
 		base := i * sampleSize
 		if err := vision.FillCHWFromImage(data[base:base+sampleSize], resized, planeSize, inputSize, inputSize, inputSize, means, stds); err != nil {
 			return nil, nil, err

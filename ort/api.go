@@ -571,7 +571,7 @@ type apiFuncs struct {
 	releaseValue                   func(ValueHandle)
 	releaseTensorTypeAndShapeInfo  func(TensorTypeAndShapeInfoHandle)
 	releaseTypeInfo                func(TypeInfoHandle)
-	castTypeInfoToTensorInfo       func(TypeInfoHandle) TensorTypeAndShapeInfoHandle
+	castTypeInfoToTensorInfo       func(TypeInfoHandle, *TensorTypeAndShapeInfoHandle) StatusHandle
 	getOnnxTypeFromTypeInfo        func(TypeInfoHandle, *OnnxType) StatusHandle
 
 	// provider

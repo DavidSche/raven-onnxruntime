@@ -1,12 +1,16 @@
 package ort
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
 
 // libPath is the ONNX Runtime 1.28.0 DLL used for integration testing.
 const libPath = `E:\study-place\Davidche\2026\raven\lib\onnxruntime.dll`
+
+// staticModelPath: 静态输入 [1,3,1024,1024] 的 ONNX 模型，用于 GetInputShape 回归测试。
+const staticModelPath = `E:\study-place\Davidche\2026\raven\raven-go\models\yolo11\yolo11m-obb.onnx`
 
 func newTestEngine(t *testing.T) *Engine {
 	t.Helper()
@@ -16,6 +20,36 @@ func newTestEngine(t *testing.T) *Engine {
 	}
 	t.Cleanup(func() { eng.Destroy() })
 	return eng
+}
+
+// TestSessionGetInputShape 回归：GetInputShape 曾因 CastTypeInfoToTensorInfo 绑定错误
+// （C 签名带 out 参数返回 status，Go 绑定误注册为单参裸指针返回）在首次调用时段错误。
+// 修复后应从静态输入模型读回 [1,3,1024,1024]。
+func TestSessionGetInputShape(t *testing.T) {
+	if _, err := os.Stat(staticModelPath); os.IsNotExist(err) {
+		t.Skipf("model not present: %s", staticModelPath)
+	}
+
+	eng := newTestEngine(t)
+	opts, err := eng.NewSessionOptions()
+	if err != nil {
+		t.Fatalf("NewSessionOptions: %v", err)
+	}
+	defer opts.Destroy()
+	s, err := eng.NewSession(filepath.Clean(staticModelPath), opts)
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	defer s.Destroy()
+
+	dims, err := s.GetInputShape(0)
+	if err != nil {
+		t.Fatalf("GetInputShape: %v", err)
+	}
+	t.Logf("input shape: %v", dims)
+	if len(dims) != 4 || dims[0] != 1 || dims[1] != 3 || dims[2] != 1024 || dims[3] != 1024 {
+		t.Fatalf("dims = %v, want [1 3 1024 1024]", dims)
+	}
 }
 
 // TestEngineVersion verifies the engine reports the correct API version and version string.

@@ -51,6 +51,14 @@ func (cfg *OnnxConfig) New() (err error) {
 	engineState.mu.Lock()
 	defer engineState.mu.Unlock()
 
+	// stale 检测先行：单例引擎被外部 Destroy（IsAlive=false）后，无论请求路径是否
+	// 相同，都必须丢弃 stale 引用再走后续逻辑——否则 M1 会拿 stale 引擎的旧 path
+	// 拒绝用户换路径重建（Destroy 后引擎 handle 已清零，仅残留 Go 指针与 path）。
+	if engineState.eng != nil && !engineState.eng.IsAlive() {
+		engineState.eng = nil
+		engineState.path = ""
+	}
+
 	// M1: refuse to silently overwrite a previously initialized Engine with a
 	// different library path; otherwise the old Engine would never be Destroyed.
 	if engineState.eng != nil && engineState.path != cfg.OnnxRuntimeLibPath {
@@ -58,14 +66,8 @@ func (cfg *OnnxConfig) New() (err error) {
 	}
 
 	if engineState.eng != nil && engineState.path == cfg.OnnxRuntimeLibPath {
-		if engineState.eng.IsAlive() {
-			// already initialized with the same path, reuse directly
-			cfg.OnnxEngine = engineState.eng
-		} else {
-			// stale singleton after Destroy(); drop it and recreate below
-			engineState.eng = nil
-			engineState.path = ""
-		}
+		// already initialized with the same path, reuse directly
+		cfg.OnnxEngine = engineState.eng
 	}
 
 	// createdEngine tracks whether this call created a brand-new Engine so that,

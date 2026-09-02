@@ -50,13 +50,25 @@ func NewDetEngine(cfg Config) (*DetEngine, error) {
 	detectedSize, dynamicBatch := detectInputSizeAndDynamicBatch(cfg.ModelPath)
 	if cfg.InputSize != 0 && cfg.InputSize != detectedSize {
 		ortlog.Warnw("input_size mismatch, overriding with detected value",
-			"configured", cfg.InputSize,
-			"detected", detectedSize,
-			"modelPath", cfg.ModelPath)
+		"configured", cfg.InputSize,
+		"detected", detectedSize,
+		"modelPath", cfg.ModelPath)
 	}
 	cfg.InputSize = detectedSize
 	if !cfg.DynamicBatch {
 		cfg.DynamicBatch = dynamicBatch
+	}
+	// A symbolic batch dim in the graph input does not guarantee the graph can
+	// actually run batch>1: exports traced at batch=1 often bake the batch axis
+	// into the graph (e.g. an input Split(axis=0, sizes=[1]) + Squeeze, or a
+	// Reshape with a static batch). Verify the claim with a one-shot batch-2
+	// probe; on failure fall back to sequential per-image inference (the
+	// documented static-batch path) instead of crashing inside PredictBatch.
+	if cfg.DynamicBatch && !verifyDynamicBatch(session, cfg.InputSize) {
+		ortlog.Warnw("model claims dynamic batch but batch>1 inference failed — falling back to sequential per-image inference",
+			"inputSize", cfg.InputSize,
+			"modelPath", cfg.ModelPath)
+		cfg.DynamicBatch = false
 	}
 	ortlog.Infow("input size resolved", "inputSize", cfg.InputSize, "dynamicBatch", cfg.DynamicBatch, "modelPath", cfg.ModelPath)
 
@@ -69,6 +81,28 @@ func NewDetEngine(cfg Config) (*DetEngine, error) {
 		session: session,
 		config:  cfg,
 	}, nil
+}
+
+// verifyDynamicBatch runs one batch-2 inference with a zero tensor to confirm
+// the model actually accepts batch>1. Returns true when the model is
+// batch-capable (or when the probe cannot be constructed — no input name /
+// unknown input size — in which case the declared capability is trusted).
+func verifyDynamicBatch(session *ort.Session, inputSize int) bool {
+	if inputSize <= 0 || len(session.InputNames) == 0 {
+		return true
+	}
+	data := make([]float32, 2*3*inputSize*inputSize)
+	tensor, err := session.NewTensor([]int64{2, 3, int64(inputSize), int64(inputSize)}, data)
+	if err != nil {
+		return false
+	}
+	defer tensor.Destroy()
+	outputValues, err := session.Run(map[string]*ort.Value{session.InputNames[0]: tensor})
+	if err != nil {
+		return false
+	}
+	ort.DestroyValues(outputValues)
+	return true
 }
 
 func (e *DetEngine) Destroy() {

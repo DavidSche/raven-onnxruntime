@@ -3,6 +3,7 @@ package efficientsam3
 import (
 	"fmt"
 	"image"
+	"sync"
 
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
 	"github.com/DavidSche/raven-onnxruntime/vision"
@@ -86,6 +87,11 @@ type ImageContext struct {
 	scaleX, scaleY float32
 	newW, newH     int
 	isDestroyed    bool
+
+	// 字段锁归属（跨锁字段审计结论，见项目规范 §17）：isDestroyed 与 fpnFeat*/text*
+	// 的全部访问经 mu——Destroy 与 DecodeRaw 可能并发，无锁时"检查通过后 Value 被
+	// 并发销毁"构成 use-after-free / double-free（与 raven-go simulation 的 stopped 同类）。
+	mu sync.Mutex
 }
 
 func (e *Engine) EncodeImage(img image.Image) (*ImageContext, error) {
@@ -177,7 +183,9 @@ func (e *Engine) encodeDummyText() (*ort.Value, *ort.Value, error) {
 	return outputs["text_features"], outputs["text_mask"], nil
 }
 
-func (ctx *ImageContext) Destroy() {
+func (ctx *ImageContext) Destroy() { // 幂等，持锁
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
 	if ctx.isDestroyed {
 		return
 	}
@@ -197,6 +205,12 @@ type Result struct {
 }
 
 func (ctx *ImageContext) DecodeRaw(points []Point) (*Result, error) {
+	// 全程持 ctx.mu：与 Destroy 互斥，保证解码期间 Value 不被并发销毁（含排队场景——
+	// DecodeRaw 先拿到锁时 Destroy 等待解码完成；Destroy 先拿到锁时 DecodeRaw 快速失败）。
+	// 代价：同一 ImageContext 上的并发 DecodeRaw 被串行化（Value 无克隆 API，这是防
+	// use-after-free 的最小正确方案；勿“优化”回只锁 isDestroyed 检查，那会重开竞态）。
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
 	if ctx.isDestroyed {
 		return nil, fmt.Errorf("image features already destroyed")
 	}

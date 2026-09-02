@@ -6,6 +6,7 @@ import (
 	"image/color"
 
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
+	"github.com/DavidSche/raven-onnxruntime/ort/ortlog"
 	"github.com/DavidSche/raven-onnxruntime/vision"
 	"github.com/up-zero/gotool/convertutil"
 )
@@ -32,6 +33,16 @@ func NewSegEngine(cfg Config) (*SegEngine, error) {
 	oc.Destroy()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ONNX session: %w", err)
+	}
+
+	// 自动适配模型真实输入尺寸（与 NewOBBEngine 相同的 GetInputShape 自适应路径）：
+	// 静态输入模型（如 yolo26x-seg.onnx 固定 640×640 输入）必须按模型输入形状预处理，
+	// 否则会话运行会因张量形状不匹配而失败；动态输入模型（n/s/m/l 官方导出 imgsz=1280）
+	// 接受任意尺寸，沿用配置的 InputSize。
+	if size := staticSquareInputSize(session); size > 0 && size != cfg.InputSize {
+		ortlog.Infow("YOLO26 seg engine auto-adapting input size to static model shape",
+			"modelPath", cfg.ModelPath, "configured", cfg.InputSize, "actual", size)
+		cfg.InputSize = size
 	}
 
 	return &SegEngine{
@@ -155,12 +166,8 @@ func (e *SegEngine) postprocess(out0, out1 *ort.Value, params imageParams) ([]Se
 		y2 := data0[offset+3]
 		classID := int(data0[offset+5])
 
-		// map back to original image
-		origX1 := max(0, int((x1-float32(params.padX))/params.scale))
-		origY1 := max(0, int((y1-float32(params.padY))/params.scale))
-		origX2 := min(params.origW, int((x2-float32(params.padX))/params.scale))
-		origY2 := min(params.origH, int((y2-float32(params.padY))/params.scale))
-		origBox := image.Rect(origX1, origY1, origX2, origY2)
+		// map back to original image (subtract letterbox padding, divide by scale, clamp)
+		origBox := mapBoxToOrig(x1, y1, x2, y2, params)
 
 		// extract mask coefficients (bounded by both the row layout and the
 		// prototype channel count to avoid out-of-range access in decodeMask)
@@ -178,6 +185,20 @@ func (e *SegEngine) postprocess(out0, out1 *ort.Value, params imageParams) ([]Se
 	}
 
 	return results, nil
+}
+
+// mapBoxToOrig converts a detection box from model coordinates back to the
+// original image coordinates: subtract the letterbox padding (padX/padY) first,
+// then divide by the scale, and clamp to the image bounds.
+// Regression test target: before the fix the padding was not subtracted, so on
+// non-square inputs boxes shifted down by ~padY/scale pixels.
+func mapBoxToOrig(x1, y1, x2, y2 float32, params imageParams) image.Rectangle {
+	return image.Rect(
+		max(0, int((x1-float32(params.padX))/params.scale)),
+		max(0, int((y1-float32(params.padY))/params.scale)),
+		min(params.origW, int((x2-float32(params.padX))/params.scale)),
+		min(params.origH, int((y2-float32(params.padY))/params.scale)),
+	)
 }
 
 // decodeMask decodes the mask
@@ -198,8 +219,8 @@ func (e *SegEngine) decodeMask(origBox image.Rectangle, maskCoeffs []float32, pr
 	for y := origBox.Min.Y; y < origBox.Max.Y; y++ {
 		for x := origBox.Min.X; x < origBox.Max.X; x++ {
 			// map back to 640 scale
-			inputX := float32(x) * params.scale
-			inputY := float32(y) * params.scale
+			inputX := float32(x)*params.scale + float32(params.padX)
+			inputY := float32(y)*params.scale + float32(params.padY)
 
 			// map back to 160 mask scale
 			mx := int(inputX / maskStride)

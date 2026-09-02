@@ -114,14 +114,8 @@ func (e *OBBEngine) postprocess(data []float32, shape []int64, params imageParam
 		// recalculate the 4 rotated corner points
 		corners := getRotatedCorners(cand.box[0], cand.box[1], cand.box[2], cand.box[3], cand.angle)
 
-		// map back to original image coordinates
-		origCorners := [4]image.Point{}
-		for i, pt := range corners {
-			ox := min(max(0, int(pt[0]/params.scale)), params.origW)
-			oy := min(max(0, int(pt[1]/params.scale)), params.origH)
-
-			origCorners[i] = image.Point{X: ox, Y: oy}
-		}
+		// map back to original image coordinates (letterbox pad removed, same as engine_det)
+		origCorners := mapCornersToOrig(corners, params)
 
 		results = append(results, OBBResult{
 			ClassID: cand.classID,
@@ -133,6 +127,22 @@ func (e *OBBEngine) postprocess(data []float32, shape []int64, params imageParam
 	}
 
 	return results, nil
+}
+
+// mapCornersToOrig maps rotated-box corners from model coordinates back to the
+// original image coordinates: subtract the letterbox padding (padX/padY) first,
+// then divide by the scale, and clamp to the image bounds.
+// Regression test target: before the fix the padding was not subtracted, so on
+// non-square inputs corners shifted down by ~padY/scale pixels.
+func mapCornersToOrig(corners [4][2]float32, params imageParams) [4]image.Point {
+	var orig [4]image.Point
+	for i, pt := range corners {
+		ox := min(max(0, int((pt[0]-float32(params.padX))/params.scale)), params.origW)
+		oy := min(max(0, int((pt[1]-float32(params.padY))/params.scale)), params.origH)
+
+		orig[i] = image.Point{X: ox, Y: oy}
+	}
+	return orig
 }
 
 // parseCandidates parses candidate boxes
@@ -177,10 +187,10 @@ func (e *OBBEngine) parseCandidates(data []float32, channels, anchors int, param
 			minY = min(pt[1], minY)
 			maxY = max(pt[1], maxY)
 		}
-		origX1 := int(minX / params.scale)
-		origY1 := int(minY / params.scale)
-		origX2 := int(maxX / params.scale)
-		origY2 := int(maxY / params.scale)
+		origX1 := int((minX - float32(params.padX)) / params.scale)
+		origY1 := int((minY - float32(params.padY)) / params.scale)
+		origX2 := int((maxX - float32(params.padX)) / params.scale)
+		origY2 := int((maxY - float32(params.padY)) / params.scale)
 
 		cands = append(cands, candidate{
 			box:     [4]float32{cx, cy, w, h},

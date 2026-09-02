@@ -19,7 +19,7 @@ type Config struct {
 	MaskThreshold float32 // Mask binarization threshold (default 0.5)
 
 	// model parameters
-	InputSize     int // default 640
+	InputSize     int // default 1280（det/seg/pose/obb 官方导出 imgsz=1280；cls 覆盖 224）
 	NumClasses    int // default 80
 	NumMaskCoeffs int // default 32
 	NumKeyPoints  int // default 17
@@ -42,10 +42,13 @@ func DefaultConfig() Config {
 		ConfThreshold:      0.45,
 		IOUThreshold:       0.45,
 		MaskThreshold:      0.50,
-		InputSize:          640,
-		NumClasses:         80,
-		NumMaskCoeffs:      32,
-		NumKeyPoints:       17,
+		// det/seg/pose 官方导出 imgsz=1280（动态输入，与 scanner 对齐）；
+		// cls 经 DefaultClsConfig 覆盖为 224。静态输入模型（如 yolo26x 固定 640）
+		// 由 New*Engine 按模型真实输入形状自动适配。
+		InputSize:     1280,
+		NumClasses:    80,
+		NumMaskCoeffs: 32,
+		NumKeyPoints:  17,
 	}
 }
 
@@ -82,7 +85,9 @@ func DefaultPoseConfig() Config {
 // DefaultOBBConfig returns default OBB configuration
 func DefaultOBBConfig() Config {
 	cfg := DefaultConfig()
-	cfg.InputSize = 1024
+	// yolo26-obb 官方导出 imgsz=1280（动态输入）；固定 1024 静态输入的
+	// yolo26x-obb 由 NewOBBEngine 按模型真实输入形状自动适配。
+	cfg.InputSize = 1280
 	cfg.NumClasses = 15
 	cfg.ModelPath = modelpath.ModelPath("yolo26", modelpath.YOLO26OBBFile)
 	return cfg

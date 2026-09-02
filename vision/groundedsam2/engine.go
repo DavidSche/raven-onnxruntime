@@ -21,6 +21,12 @@ import (
 //  3. 图像特征 + 文本特征 -> GDINO detector -> 检测框
 //  4. 图像 -> SAM2 image_encoder  -> 图像嵌入 + 高分辨率特征
 //  5. 图像嵌入 + 检测框 -> SAM2 mask_decoder -> 分割掩码
+//
+// 字段锁归属（2026-08 审计，见 AGENTS.md「并发字段锁归属」）：单次推理引擎，
+// Predict 路径对全部字段（session/config/params）只读、零字段写、零共享可变
+// 状态，无需加锁；仅 Destroy 生命周期收尾写入 session 字段（置 nil），与 Predict
+// 由调用方（如 raven-go EngineCache 的 ce.mu）互斥串行化，引擎自身不承诺并发
+// Destroy。
 type SegEngine struct {
 	// GroundingDINO 子模型
 	gdinoImageEncoder *ort.Session

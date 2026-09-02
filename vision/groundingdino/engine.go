@@ -21,6 +21,11 @@ import (
 //   - image_encoder: 提取多尺度图像特征
 //   - text_encoder:  提取文本嵌入
 //   - detector:      跨模态融合 + 检测头
+//
+// 字段锁归属（2026-08 审计，见 AGENTS.md「并发字段锁归属」）：单次推理引擎，
+// 除 runCount（atomic）外全部字段（session/config/metadata）构造后只读，Predict
+// 路径零共享可变状态，无需加锁；Predict∥Destroy 并发由调用方（如 raven-go
+// EngineCache 的 ce.mu）串行化，引擎自身不承诺并发 Destroy。
 type DetEngine struct {
 	imageEncoder *ort.Session
 	textEncoder  *ort.Session

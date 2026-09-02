@@ -3,6 +3,7 @@ package vision
 import (
 	"fmt"
 	"image"
+	"math"
 
 	"golang.org/x/image/draw"
 )
@@ -120,6 +121,25 @@ type LetterBoxParams struct {
 	OrigH int     // 原始高度
 }
 
+// pyRound 模拟 Python 内置 round()（银行家舍入：恰好 .5 时舍入到偶数），
+// 用于与 ultralytics letterbox 的内容尺寸 round(w*r) 保持逐位一致。
+// 仅处理非负输入（图像尺寸恒为正）。
+func pyRound(x float64) int {
+	f := math.Floor(x)
+	frac := x - f
+	if frac < 0.5 {
+		return int(f)
+	}
+	if frac > 0.5 {
+		return int(f) + 1
+	}
+	// 恰为 .5：舍入到偶数
+	if int(f)%2 == 0 {
+		return int(f)
+	}
+	return int(f) + 1
+}
+
 // CalcLetterBox 根据输入尺寸和目标尺寸计算 LetterBox 参数。
 //   - stride: 对齐步长（默认为 0 或 32）
 //   - align: 填充对齐方式（居中对齐/左上角对齐）
@@ -128,22 +148,30 @@ func CalcLetterBox(origW, origH, targetSize int, stride int, align LetterBoxAlig
 		return LetterBoxParams{}, fmt.Errorf("invalid dimensions: origW=%d origH=%d targetSize=%d", origW, origH, targetSize)
 	}
 
+	// stride 参数仅保留 API 兼容（调用方传入 DefaultStride）；内容尺寸已不做 stride 对齐
+	//（见下方注释），该参数当前不使用。
 	if stride <= 0 {
 		stride = 32
 	}
 
-	scale := float32(targetSize) / float32(max(origW, origH))
-	newW := int(float32(origW) * scale)
-	newH := int(float32(origH) * scale)
+	// 内容尺寸比例在 float64 下计算（与 ultralytics letterbox 的
+	// r = min(t/h, t/w) 逐位一致），避免 float32 量化误差把乘积翻过 .5 边界。
+	// 内容尺寸使用 Python round()（银行家舍入）语义，与 ultralytics 的 round(w*r)
+	// 一致：int() 截断会在 float 乘积略低于整数时少 1px（如 963×(1280/963)
+	// =1279.999… 截断为 1279 而 round 为 1280）。回归测试：preprocess_test.go 的
+	// TestCalcLetterBox_RoundSemantics。
+	scale64 := float64(targetSize) / float64(max(origW, origH))
+	newW := pyRound(float64(origW) * scale64)
+	newH := pyRound(float64(origH) * scale64)
+	scale := float32(scale64)
 
-	// stride 对齐
-	if newW%stride != 0 {
-		newW = (newW/stride + 1) * stride
-	}
-	if newH%stride != 0 {
-		newH = (newH/stride + 1) * stride
-	}
-	// stride 向上取整后可能使缩放尺寸超过 targetSize，导致 padX/padY 为负数，这里做钳制
+	// 注意：不再对内容尺寸做 stride(32) 对齐。早期实现会把缩放后的内容向上取整到
+	// 32 的倍数（如 360→384），导致喂给模型的内容长宽比被拉伸（Y 向最多 +6.7%），
+	// 与 ultralytics 标准 letterbox（内容=精确缩放尺寸，画布 padding 到 targetSize）
+	// 不一致，输出坐标系统性偏移（非 32 对齐内容上可达数十像素）。
+	// 回归护栏：raven-go/internal/inference/ 下的 yolo11/yolo26 OBB、det/seg/pose
+	// 多宽高比门控测试（obb_multimage_gated_test.go、yolo11_multimage_gated_test.go）。
+	// 钳制：缩放后尺寸理论上不会超过 targetSize（scale 取 min 边），保留钳制以防浮点边界。
 	if newW > targetSize {
 		newW = targetSize
 	}
