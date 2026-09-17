@@ -108,6 +108,35 @@ func (o *SessionOptions) GetExecutionMode() (ExecutionMode, error) {
 	return mode, nil
 }
 
+// SetWeightlessSourceModelBuffer provides the source ONNX model as an in-memory
+// byte buffer for weightless EPContext sessions.
+//
+// When creating a session from a weightless EPContext model, the EP may need
+// access to the source model's initializer data. This call supplies the source
+// model as a byte buffer for scenarios where the source model is not available
+// as a file on disk (e.g., loaded from a package or downloaded).
+//
+// The caller retains ownership of the buffer and must ensure it remains valid
+// for the lifetime of the session. If both a buffer (via this call) and a file
+// path (via the "ep.context_source_model_path" session config entry) are
+// provided, the EP should prefer the buffer.
+//
+// Requires ONNX Runtime 1.29+ (ORT_API_VERSION 29). Returns an error if the
+// loaded library does not support this API.
+func (o *SessionOptions) SetWeightlessSourceModelBuffer(data []byte) error {
+	if o.engine.funcs.setWeightlessSourceModelBuffer == nil {
+		return fmt.Errorf("SetWeightlessSourceModelBuffer requires ONNX Runtime 1.29+ (current API version: %d)", o.engine.version)
+	}
+	if len(data) == 0 {
+		return fmt.Errorf("SetWeightlessSourceModelBuffer: data must not be empty")
+	}
+	status := o.engine.funcs.setWeightlessSourceModelBuffer(o.handle, unsafe.Pointer(&data[0]), uintptr(len(data)))
+	if err := o.engine.checkStatus(status); err != nil {
+		return fmt.Errorf("SetWeightlessSourceModelBuffer: %w", err)
+	}
+	return nil
+}
+
 // EnableCUDA enables CUDA execution provider.
 func (o *SessionOptions) EnableCUDA() error {
 	var cudaOpts CUDAProviderOptionsV2Handle

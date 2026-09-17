@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// libPath is the ONNX Runtime 1.28.0 DLL used for integration testing.
-const libPath = `E:\study-place\Davidche\2026\raven\lib\onnxruntime.dll`
+// libPath is the ONNX Runtime 1.30.0 GPU (CUDA 12) DLL used for integration testing.
+const libPath = `E:\study-place\Davidche\2026\raven\lib\onnxruntime-win-x64-gpu_cuda12-1.30.0\lib\onnxruntime.dll`
 
 // staticModelPath: 静态输入 [1,3,1024,1024] 的 ONNX 模型，用于 GetInputShape 回归测试。
 const staticModelPath = `E:\study-place\Davidche\2026\raven\raven-go\models\yolo11\yolo11m-obb.onnx`
@@ -63,8 +63,8 @@ func TestEngineVersion(t *testing.T) {
 	t.Logf("ONNX Runtime version: %s", v)
 
 	apiV := eng.GetApiVersion()
-	if apiV != ApiVersion28 {
-		t.Fatalf("expected API version 28, got %d", apiV)
+	if apiV != ApiVersion30 {
+		t.Fatalf("expected API version 30 (ONNX Runtime 1.30.0), got %d", apiV)
 	}
 	t.Logf("API version: %d", apiV)
 }
@@ -206,6 +206,31 @@ func TestNewApis_GetExperimentalFunction(t *testing.T) {
 	} else {
 		t.Logf("GetExperimentalFunction with non-existent name correctly returned error: %v", err)
 	}
+}
+
+// TestNewApis_SetWeightlessSourceModelBuffer verifies the ORT 1.29+ API surface:
+// call must succeed with a non-empty buffer and fail cleanly on empty input.
+func TestNewApis_SetWeightlessSourceModelBuffer(t *testing.T) {
+	eng := newTestEngine(t)
+
+	opts, err := eng.NewSessionOptions()
+	if err != nil {
+		t.Fatalf("NewSessionOptions failed: %v", err)
+	}
+	defer opts.Destroy()
+
+	// Empty buffer must be rejected before reaching the C API.
+	if err := opts.SetWeightlessSourceModelBuffer(nil); err == nil {
+		t.Fatal("expected error for empty buffer")
+	}
+
+	// Non-empty buffer: a valid ORT model is not required for the session-option
+	// call itself — the buffer is validated lazily by the EP at session creation.
+	stub := []byte("stub-source-model-bytes")
+	if err := opts.SetWeightlessSourceModelBuffer(stub); err != nil {
+		t.Fatalf("SetWeightlessSourceModelBuffer with non-empty buffer failed: %v", err)
+	}
+	t.Log("SetWeightlessSourceModelBuffer accepted non-empty buffer (1.29+ API verified)")
 }
 
 // TestEngineDestroyIdempotent verifies that Destroy is safe to call multiple times.

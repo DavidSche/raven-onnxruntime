@@ -28,8 +28,10 @@ const (
 	ApiVersion26 ApiVersion = 26
 	ApiVersion27 ApiVersion = 27
 	ApiVersion28 ApiVersion = 28
+	ApiVersion29 ApiVersion = 29
+	ApiVersion30 ApiVersion = 30
 
-	DefaultApiVersion = ApiVersion28
+	DefaultApiVersion = ApiVersion30
 
 	LogVerbose LoggingLevel = 0
 	LogInfo    LoggingLevel = 1
@@ -41,8 +43,8 @@ const (
 )
 
 var supportedApiVersions = []ApiVersion{
-	ApiVersion28, ApiVersion27, ApiVersion26, ApiVersion25, ApiVersion24,
-	ApiVersion23, ApiVersion22, ApiVersion21,
+	ApiVersion30, ApiVersion29, ApiVersion28, ApiVersion27, ApiVersion26, ApiVersion25,
+	ApiVersion24, ApiVersion23, ApiVersion22, ApiVersion21,
 	ApiVersion20, ApiVersion19, ApiVersion18, ApiVersion17,
 }
 
@@ -115,7 +117,7 @@ func (e *Engine) AvailableProviders() ([]string, error) {
 // Version negotiation strategy:
 //  1. Prefer the version specified by WithApiVersion
 //  2. Then read the environment variable ORT_API_VERSION
-//  3. Default to DefaultApiVersion (currently 28)
+//  3. Default to DefaultApiVersion (currently 30)
 //  4. If the requested version is unavailable, automatically downgrade to the highest version supported by the library
 func NewEngine(libPath string, opts ...EngineOption) (*Engine, error) {
 	requestedVersion := resolveApiVersion(opts)
@@ -293,6 +295,16 @@ func (e *Engine) initApi() (err error) {
 	// ORT 1.28+ APIs
 	if e.version >= ApiVersion28 {
 		purego.RegisterFunc(&e.funcs.getExperimentalFunction, e.api.GetExperimentalFunction)
+	}
+
+	// ORT 1.29+ APIs
+	if e.version >= ApiVersion29 {
+		purego.RegisterFunc(&e.funcs.setWeightlessSourceModelBuffer, e.api.SessionOptionsSetWeightlessSourceModelBuffer)
+	}
+
+	// ORT 1.30+ APIs
+	if e.version >= ApiVersion30 {
+		purego.RegisterFunc(&e.funcs.getPreallocatedOutput, e.api.KernelContext_GetPreallocatedOutput)
 	}
 
 	return nil

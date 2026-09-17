@@ -434,6 +434,10 @@ type ortApi struct {
 	// --- Functions added in ORT 1.28 (ORT_API_VERSION 28), appended to the OrtApi struct ---
 	GetExperimentalFunction     uintptr // 422 (since v1.28, ORT_API_T, returns OrtExperimentalFnPtr)
 	KernelContext_GetSyncStream uintptr // 423 (since v1.28, ORT_API2_STATUS)
+	// --- Functions added in ORT 1.29 (ORT_API_VERSION 29), appended to the OrtApi struct ---
+	SessionOptionsSetWeightlessSourceModelBuffer uintptr // 424 (since v1.29, ORT_API2_STATUS)
+	// --- Functions added in ORT 1.30 (ORT_API_VERSION 30), appended to the OrtApi struct ---
+	KernelContext_GetPreallocatedOutput uintptr // 425 (since v1.30, ORT_API2_STATUS)
 }
 
 // OrtStatus is an opaque pointer to an ONNX Runtime status object.
@@ -585,4 +589,12 @@ type apiFuncs struct {
 
 	// ORT 1.28+ APIs (registered conditionally when apiVersion >= 28)
 	getExperimentalFunction func(*byte) unsafe.Pointer // 422 (returns OrtExperimentalFnPtr or nil)
+
+	// ORT 1.29+ APIs (registered conditionally when apiVersion >= 29)
+	// SetWeightlessSourceModelBuffer 为无权重 EPContext session 提供源模型字节缓冲。
+	setWeightlessSourceModelBuffer func(SessionOptionsHandle, unsafe.Pointer, uintptr) StatusHandle // 424
+
+	// ORT 1.30+ APIs (registered conditionally when apiVersion >= 30)
+	// GetPreallocatedOutput 返回借用的预分配输出 OrtValue（仅 kernel Compute 内有效）。
+	getPreallocatedOutput func(unsafe.Pointer, uintptr, *ValueHandle) StatusHandle // 425 (OrtKernelContext*)
 }
