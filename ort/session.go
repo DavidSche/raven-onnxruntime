@@ -150,6 +150,105 @@ func (o *SessionOptions) EnableCUDA() error {
 	return o.engine.checkStatus(status)
 }
 
+// CoreMLProviderOptions holds optional configuration for the CoreML execution
+// provider. All fields are optional; zero values mean ORT defaults.
+//
+// Keys are passed through OrtApi::SessionOptionsAppendExecutionProvider
+// (provider name "CoreMLExecutionProvider", ORT >= 1.12).
+type CoreMLProviderOptions struct {
+	// MLComputeUnits controls which compute units CoreML may use.
+	// Values: "all" (default), "cpuAndGPU", "cpuAndNeuralEngine", "cpuOnly".
+	// Empty means ORT default ("all").
+	MLComputeUnits string
+	// ModelFormat: "neuralNetwork" (legacy) or "mlProgram" (newer models).
+	// Empty means ORT default.
+	ModelFormat string
+	// ANEConversionHint hints low-precision conversion for the Apple Neural
+	// Engine, e.g. "fp16" or "float32". Empty means ORT default.
+	ANEConversionHint string
+}
+
+// buildKeyValues renders the options as parallel key/value slices (ORT convention).
+// Keys with empty values are omitted.
+func (c *CoreMLProviderOptions) buildKeyValues() (keys, vals []string) {
+	if c == nil {
+		return nil, nil
+	}
+	if c.MLComputeUnits != "" {
+		keys = append(keys, "MLComputeUnits")
+		vals = append(vals, c.MLComputeUnits)
+	}
+	if c.ModelFormat != "" {
+		keys = append(keys, "ModelFormat")
+		vals = append(vals, c.ModelFormat)
+	}
+	if c.ANEConversionHint != "" {
+		keys = append(keys, "ANEConversionHint")
+		vals = append(vals, c.ANEConversionHint)
+	}
+	return keys, vals
+}
+
+// EnableCoreML appends the CoreML execution provider (macOS GPU / Apple Neural
+// Engine acceleration). Uses the generic provider appender
+// (OrtApi::SessionOptionsAppendExecutionProvider, available since ORT 1.12),
+// passing provider name "CoreMLExecutionProvider".
+//
+// Behavior notes:
+//   - On non-Apple builds the provider is simply not compiled into the runtime,
+//     so this call returns an ORT error ("no execution provider available" or
+//     similar). Callers should check Engine.AvailableProviders() first.
+//   - Failure does NOT invalidate the SessionOptions; the caller may continue
+//     with CPU-only options (the append attempt is rejected before any state change).
+//
+// opts may be nil to accept all ORT defaults.
+func (o *SessionOptions) EnableCoreML(opts *CoreMLProviderOptions) error {
+	nameC, err := stringToCString("CoreMLExecutionProvider")
+	if err != nil {
+		return fmt.Errorf("EnableCoreML: %w", err)
+	}
+	keys, vals := opts.buildKeyValues()
+
+	keyPtrs := make([]*byte, 0, len(keys)+1)
+	valPtrs := make([]*byte, 0, len(vals)+1)
+	for _, k := range keys {
+		kc, err := stringToCString(k)
+		if err != nil {
+			return fmt.Errorf("EnableCoreML: %w", err)
+		}
+		keyPtrs = append(keyPtrs, kc)
+	}
+	for _, v := range vals {
+		vc, err := stringToCString(v)
+		if err != nil {
+			return fmt.Errorf("EnableCoreML: %w", err)
+		}
+		valPtrs = append(valPtrs, vc)
+	}
+	// NULL terminators for the C arrays
+	keyPtrs = append(keyPtrs, nil)
+	valPtrs = append(valPtrs, nil)
+
+	var keysPtr, valsPtr **byte
+	if len(keyPtrs) > 1 {
+		keysPtr = &keyPtrs[0]
+	}
+	if len(valPtrs) > 1 {
+		valsPtr = &valPtrs[0]
+	}
+
+	status := o.engine.funcs.sessionOptionsAppendExecutionProvider(
+		o.handle, nameC, keysPtr, valsPtr, uintptr(len(keys)),
+	)
+	runtime.KeepAlive(nameC)
+	runtime.KeepAlive(keyPtrs)
+	runtime.KeepAlive(valPtrs)
+	if err := o.engine.checkStatus(status); err != nil {
+		return fmt.Errorf("EnableCoreML: %w", err)
+	}
+	return nil
+}
+
 // Destroy releases the underlying ORT SessionOptions resources.
 // This method is safe for concurrent use; it will only execute once.
 func (o *SessionOptions) Destroy() {

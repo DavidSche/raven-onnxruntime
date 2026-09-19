@@ -111,6 +111,63 @@ go get github.com/DavidSche/raven-onnxruntime
 - Canonical model directory: repository root `models/` (override with `RAVEN_MODELS_DIR` if needed)
 - ONNX Runtime path can be overridden with `RAVEN_ORT_LIB_PATH`
 
+### GPU Acceleration
+
+`OnnxConfig` supports optional CUDA and CoreML execution providers. Use CUDA on
+NVIDIA platforms and CoreML on Apple platforms; do not enable both unless you
+deliberately use a runtime build that exposes both providers.
+
+```go
+import (
+    "runtime"
+
+    "github.com/DavidSche/raven-onnxruntime/ort"
+)
+
+cfg := yolo26.DefaultDetConfig()
+cfg.OnnxRuntimeLibPath = "lib/onnxruntime.dll"
+
+switch runtime.GOOS {
+case "darwin":
+    // Apple GPU / Apple Neural Engine
+    cfg.UseCoreML = true
+    cfg.CoreMLOpts = &ort.CoreMLProviderOptions{
+        MLComputeUnits: "cpuAndGPU", // all | cpuAndGPU | cpuAndNeuralEngine | cpuOnly
+    }
+case "windows", "linux":
+    // NVIDIA GPU
+    cfg.UseCuda = true
+}
+```
+
+For CUDA, use the ONNX Runtime GPU build and install the CUDA/cuDNN runtime
+required by that build. Recent official packages align CUDA 12.x with cuDNN 9.x;
+ONNX Runtime 1.27+ GPU packages default to CUDA 13.0. Make sure the CUDA and
+cuDNN shared libraries are on the Windows `PATH` or Unix
+`LD_LIBRARY_PATH`/`DYLD_LIBRARY_PATH`.
+
+For CoreML, use a macOS shared library built with the CoreML execution provider
+(`--use_coreml`). CoreML requires macOS 10.15+; Apple Neural Engine support is
+recommended for best performance.
+
+If the selected execution provider is not present in `AvailableProviders()`,
+`OnnxConfig.New()` fails fast. If CUDA/CoreML is detected but its provider
+options cannot be enabled, initialization logs a warning and falls back to CPU.
+After `cfg.New()`, confirm the detected providers:
+
+```go
+providers, err := cfg.OnnxEngine.AvailableProviders()
+if err != nil {
+    panic(err)
+}
+log.Printf("available providers: %v", providers)
+```
+
+For unsupported operator coverage and provider-specific options, see the
+official [CUDA](https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html)
+and [CoreML](https://onnxruntime.ai/docs/execution-providers/CoreML-ExecutionProvider.html)
+execution provider documentation.
+
 ### YOLO26 Detection
 
 ```go
@@ -295,6 +352,65 @@ import "github.com/DavidSche/raven-onnxruntime/ort/ortlog"
 
 ortlog.SetLogger(myZapLogger) // Implement the ortlog.Logger interface
 ```
+
+## ONNX Runtime 1.29 / 1.30 New APIs
+
+Bindings are aligned with ONNX Runtime 1.30.0 (ORT_API_VERSION 30). Default API version is now **30** (was 28); two new C API entries are bound:
+
+| ORT version | C API (OrtApi index) | Go binding |
+|-------------|----------------------|------------|
+| 1.29 | `SessionOptionsSetWeightlessSourceModelBuffer` (#424) | `SessionOptions.SetWeightlessSourceModelBuffer` |
+| 1.30 | `KernelContext_GetPreallocatedOutput` (#425) | low-level `ortApi.KernelContext_GetPreallocatedOutput` |
+
+### Version negotiation (auto-downgrade)
+
+The engine keeps working with older runtimes: if the requested (or default) version is unavailable, it automatically downgrades to the highest version the loaded library supports with a warning.
+
+```go
+engine, err := ort.NewEngine(libPath, ort.WithApiVersion(ort.ApiVersion30))
+if err != nil {
+    log.Fatal(err)
+}
+defer engine.Destroy()
+
+// Actual negotiated version (30 on 1.30+, lower on older libraries)
+apiver := engine.GetApiVersion()
+ortVersion := engine.GetVersion() // e.g. "1.30.0"
+```
+
+### 1.29: Weightless EPContext source model from memory
+
+When creating a session from a **weightless EPContext model**, the execution provider may need the source model's initializer data. `SetWeightlessSourceModelBuffer` supplies it as an in-memory byte buffer — for source models not available on disk (e.g. embedded in a package or downloaded):
+
+```go
+opts, err := engine.NewSessionOptions()
+if err != nil {
+    log.Fatal(err)
+}
+defer opts.Destroy()
+
+// sourceOnnx: the original (with-weights) model as bytes
+if err := opts.SetWeightlessSourceModelBuffer(sourceOnnx); err != nil {
+    // Requires ONNX Runtime 1.29+; returns an error on older libraries
+    log.Fatal(err)
+}
+
+session, err := engine.NewSession("model.ep.context.onnx", opts)
+if err != nil {
+    log.Fatal(err)
+}
+defer session.Destroy()
+```
+
+Notes:
+
+- The caller retains ownership of the buffer; it must stay valid for the **lifetime of the session**.
+- If both a buffer (this call) and a file path (session config `ep.context_source_model_path`) are given, the EP prefers the buffer.
+- Requires ONNX Runtime 1.29+; the method returns a descriptive error on older libraries.
+
+### 1.30: Preallocated output for custom kernels
+
+`KernelContext_GetPreallocatedOutput` (OrtApi #425) lets custom Op kernel implementations borrow a caller-preallocated output `OrtValue` inside `Compute`, avoiding an output copy. It is bound at the `ortApi` struct level (`KernelContext_GetPreallocatedOutput`, registered when API version ≥ 30) for kernel authors working through the raw API function table; the high-level vision/session APIs in this repo do not use it directly. A nil-valued field means the loaded runtime predates 1.30.
 
 ## Dependencies
 

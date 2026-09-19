@@ -26,6 +26,7 @@ type Config struct {
 
 	// optional parameters
 	UseCuda           bool
+	UseCoreML         bool // (optional) enable CoreML (macOS GPU/ANE)
 	NumThreads        int
 	EnableCpuMemArena bool
 	ApiVersion        ort.ApiVersion

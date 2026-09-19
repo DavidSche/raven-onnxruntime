@@ -85,7 +85,7 @@ th{background:#f1f5f9;font-weight:600;text-align:left}th,td{padding:10px 14px;bo
 <div class="nav-section"><div class="nav-section-title">Advanced Topics</div>
 <a class="nav-item" href="#batch">Batch Inference</a>
 <a class="nav-item" href="#pipeline">Model Pipeline</a>
-<a class="nav-item" href="#cuda">CUDA Acceleration</a>
+<a class="nav-item" href="#cuda">GPU Acceleration</a>
 <a class="nav-item" href="#session-opts">Session Options</a>
 <a class="nav-item" href="#logging">Logging System</a>
 <a class="nav-item" href="#api-ver">API Version Negotiation</a></div>
@@ -139,7 +139,8 @@ th{background:#f1f5f9;font-weight:600;text-align:left}th,td{padding:10px 14px;bo
 <tbody>
 <tr><td><span class="tag tag-blue">Zero-CGO</span></td><td>Uses purego to call C shared libraries — no C compiler required, zero cross-compilation barriers</td></tr>
 <tr><td><span class="tag tag-green">Batch Inference</span></td><td>YOLO26 and RF-DETR support PredictBatch, fully utilizing GPU parallelism</td></tr>
-<tr><td><span class="tag tag-cyan">CUDA Acceleration</span></td><td>Optionally enable CUDA Execution Provider for significant GPU inference speedup</td></tr>
+<tr><td><span class="tag tag-cyan">CUDA Acceleration</span></td><td>Optionally enable the CUDA Execution Provider for NVIDIA GPU inference</td></tr>
+<tr><td><span class="tag tag-cyan">CoreML Acceleration</span></td><td>Optionally enable CoreML GPU / Apple Neural Engine execution on macOS</td></tr>
 <tr><td><span class="tag tag-orange">API Version Negotiation</span></td><td>Supports automatic API version downgrade for compatibility with different ONNX Runtime shared library versions</td></tr>
 <tr><td><span class="tag tag-blue">Dynamic I/O</span></td><td>Dynamically retrieves model input/output names, compatible with different export toolchains</td></tr>
 <tr><td><span class="tag tag-green">Segmented Timing</span></td><td>Outputs preprocessing/inference/postprocessing segmented timing statistics every 60 frames</td></tr>
@@ -152,7 +153,8 @@ th{background:#f1f5f9;font-weight:600;text-align:left}th,td{padding:10px 14px;bo
 <ul>
 <li>Go 1.24+</li>
 <li>ONNX Runtime shared library (<code class="ic">onnxruntime.dll</code> / <code class="ic">libonnxruntime.so</code> / <code class="ic">libonnxruntime.dylib</code>)</li>
-<li>(Optional) NVIDIA GPU + CUDA for GPU acceleration</li>
+<li>(Optional) NVIDIA GPU, CUDA toolkit, cuDNN and ONNX Runtime GPU build for CUDA acceleration</li>
+<li>(Optional) macOS 10.15+ and a CoreML-enabled ONNX Runtime build for CoreML acceleration</li>
 </ul>
 <h3>Installation</h3>
 <pre>go get github.com/DavidSche/raven-onnxruntime</pre>
@@ -334,7 +336,7 @@ providers, _ := engine.AvailableProviders()</pre>
 <ol>
 <li>The version specified via <code class="ic">WithApiVersion()</code> in code</li>
 <li>The value of the <code class="ic">ORT_API_VERSION</code> environment variable</li>
-<li>The default value <code class="ic">DefaultApiVersion</code> (currently 26)</li>
+<li>The default value <code class="ic">DefaultApiVersion</code> (currently 30)</li>
 </ol>
 <p>If the requested version is unavailable, it automatically downgrades to the highest compatible version supported by the library.</p>
 
@@ -400,6 +402,8 @@ count, err := value.GetElementCount()</pre>
     OnnxEngine         *ort.Engine
     OnnxRuntimeLibPath string  // Required: ONNX Runtime shared library path
     UseCuda            bool    // Optional: whether to enable CUDA
+    UseCoreML          bool    // Optional: enable CoreML EP on macOS
+    CoreMLOpts         *ort.CoreMLProviderOptions // Optional: nil uses ORT defaults
     NumThreads         int     // Optional: ONNX thread count
     ApiVersion         ort.ApiVersion // Optional: API version
     EnableCpuMemArena  bool    // Optional: whether to enable ONNX memory pool
@@ -423,7 +427,7 @@ defer oc.Destroy()
 
 session, err := oc.OnnxEngine.NewSession("model.onnx", oc.SessionOptions)</pre>
 
-<div class="tip"><div class="tip-title">Singleton Mechanism</div><p><code class="ic">OnnxConfig.New()</code> uses <code class="ic">sync.Mutex</code> + state checking to implement the global Engine singleton. Unlike <code class="ic">sync.Once</code>, DLL load failures can be retried. Only one DLL path is allowed per process.</p></div>
+<div class="tip"><div class="tip-title">Singleton Mechanism</div><p><code class="ic">OnnxConfig.New()</code> uses <code class="ic">sync.Mutex</code> + state checking to implement the global Engine singleton. Unlike <code class="ic">sync.Once</code>, DLL load failures can be retried. Only one DLL path is allowed per process; stale references are discarded during the next <code class="ic">New()</code> so retry/rebuild is safe.</p></div>
 
 <h3>Default Session Options</h3>
 <table>
@@ -1052,29 +1056,58 @@ maskImg, score, err := imgCtx.Decode(points)</pre>
 
 <div class="tip"><div class="tip-title">Pipeline Advantages</div><p>The YOLO + SAM combination balances detection speed and segmentation accuracy. YOLO quickly locates target regions, while SAM generates pixel-level precise masks within those regions. This pattern is particularly suitable for automated scenarios requiring high-precision segmentation.</p></div>
 
-<h2 id="cuda" class="sa">CUDA Acceleration</h2>
-<p>Enabling CUDA can significantly improve inference speed, especially for large models and batch inference scenarios.</p>
+<h2 id="cuda" class="sa">GPU Acceleration (CUDA / CoreML)</h2>
+<p>Use CUDA on NVIDIA platforms and CoreML on macOS. Do not set both flags unless the loaded runtime exposes both providers; unsupported provider selection fails fast during <code class="ic">OnnxConfig.New()</code>.</p>
 
-<h3>Prerequisites</h3>
+<h3>CUDA</h3>
 <ul>
 <li>NVIDIA GPU (compute capability 6.0+)</li>
-<li>CUDA Toolkit installed</li>
+<li>CUDA Toolkit and cuDNN versions matching the ONNX Runtime GPU build; recent packages typically align CUDA 12.x with cuDNN 9.x, while ORT 1.27+ defaults to CUDA 13.0</li>
 <li>ONNX Runtime GPU version shared library</li>
+<li>CUDA/cuDNN shared libraries on Windows <code class="ic">PATH</code>, or Unix <code class="ic">LD_LIBRARY_PATH</code> / <code class="ic">DYLD_LIBRARY_PATH</code></li>
 </ul>
 
-<h3>How to Enable</h3>
-<pre>// Method 1: Enable via Config (recommended)
+<h3>Enable CUDA</h3>
+<pre>// Preferred: enable via Config
 cfg := yolo26.DefaultDetConfig()
 cfg.UseCuda = true
 
-// Method 2: Enable via ort layer
+// Alternative: low-level SessionOptions
 opts, _ := engine.NewSessionOptions()
-opts.EnableCUDA()</pre>
+if err := opts.EnableCUDA(); err != nil {
+    // The provider may be detected but fail to append, for example due to
+    // missing or incompatible CUDA/cuDNN dependencies.
+    panic(err)
+}</pre>
 
-<div class="warn"><div class="warn-title">Error Handling</div><p>If CUDA is requested but ONNX Runtime does not detect CUDAExecutionProvider, OnnxConfig.New() will return a clear error message instead of silently falling back to CPU. This ensures that GPU inference is not accidentally replaced by CPU inference in scenarios where GPU is required.</p></div>
+<div class="warn"><div class="warn-title">Vision-Layer Behavior</div><p>If CUDAExecutionProvider is absent, <code class="ic">OnnxConfig.New()</code> returns an error. If the provider is present but cannot be enabled (for example, a cuDNN mismatch), initialization logs a WARN and falls back to CPU. Inspect logs when GPU execution is required.</p></div>
 
+<h3>CoreML</h3>
+<ul>
+<li>Appended through the generic provider interface (ORT 1.12+) with provider name <code class="ic">CoreMLExecutionProvider</code>.</li>
+<li>Requires macOS 10.15+; Apple Neural Engine is recommended for best performance.</li>
+<li>Use a CoreML-enabled ONNX Runtime C/C++ <code class="ic">.dylib</code>; custom builds require <code class="ic">--use_coreml</code>.</li>
+<li>CoreML partitions the ONNX graph. Operators it does not support continue executing on CPU.</li>
+<li>Model compilation may be slow on first inference; subsequent runs can reuse CoreML's cache.</li>
+</ul>
+
+<pre>cfg := yolo26.DefaultDetConfig()
+cfg.UseCoreML = true
+cfg.CoreMLOpts = &ort.CoreMLProviderOptions{
+    MLComputeUnits: "cpuAndGPU", // all / cpuAndGPU / cpuAndNeuralEngine / cpuOnly
+}
+
+// Low-level options (nil means ORT defaults):
+// ModelFormat:       "neuralNetwork" or "mlProgram"
+//                    mlProgram requires Core ML 5 / macOS 12+
+// ANEConversionHint: "fp16" or "float32"</pre>
+
+<div class="warn"><div class="warn-title">Vision-Layer Behavior</div><p>If CoreMLExecutionProvider is absent, <code class="ic">OnnxConfig.New()</code> returns an error. If it is detected but <code class="ic">EnableCoreML</code> fails, initialization logs a WARN and falls back to CPU.</p></div>
+
+<h3>Verify Providers</h3>
 <pre>providers, _ := engine.AvailableProviders()
-// Example output: ["CPUExecutionProvider", "CUDAExecutionProvider"]</pre>
+// CPU+CUDA: ["CPUExecutionProvider", "CUDAExecutionProvider"]
+// CPU+CoreML: ["CPUExecutionProvider", "CoreMLExecutionProvider"]</pre>
 
 <h2 id="session-opts" class="sa">Session Options</h2>
 <h3>SessionOptions API</h3>
@@ -1088,7 +1121,11 @@ opts.EnableCUDA()</pre>
 <tr><td><code class="ic">SetGraphOptimizationLevel(level)</code></td><td>Graph optimization level</td><td>ORT_ENABLE_ALL</td></tr>
 <tr><td><code class="ic">SetCpuMemArena(useArena)</code></td><td>CPU memory pool policy</td><td>false</td></tr>
 <tr><td><code class="ic">EnableCUDA()</code></td><td>Enable CUDA EP</td><td>—</td></tr>
+<tr><td><code class="ic">EnableCoreML(opts)</code></td><td>Enable CoreML EP (macOS GPU/ANE; pass nil for ORT defaults)</td><td>—</td></tr>
 </tbody></table>
+
+<h3>CoreML Configuration</h3>
+<div class="card"><p>For CoreML runtime requirements, configuration fields and provider-selection behavior, see <strong>GPU Acceleration</strong> above.</p></div>
 
 <h3>CpuMemArena Explanation</h3>
 <div class="card">
@@ -1132,10 +1169,10 @@ ortlog.SetLogger(myZapLogger)</pre>
 <pre>[INFO] yolo26 det timings  modelPath=...  batchSize=4  preprocess=2.1ms  run=5.3ms  postprocess=0.8ms  total=8.2ms  count=60</pre>
 
 <h2 id="api-ver" class="sa">API Version Negotiation</h2>
-<p>raven-onnxruntime defaults to ONNX Runtime C API version 26 and supports automatic downgrade for compatibility with different versions of the shared library.</p>
+<p>raven-onnxruntime is aligned with ONNX Runtime 1.30.0 / C API version 30 and supports automatic downgrade for compatibility with different versions of the shared library.</p>
 
 <h3>Version Negotiation Strategy</h3>
-<div class="arch">Code WithApiVersion(23)    Env ORT_API_VERSION=20    Default DefaultApiVersion(26)
+<div class="arch">Code WithApiVersion(23)    Env ORT_API_VERSION=20    Default DefaultApiVersion(30)
          ↓                         ↓                           ↓
          └─────────── resolveApiVersion() priority ─────────────┘
                      Code parameter > Environment variable > Default value
@@ -1160,8 +1197,21 @@ ortlog.SetLogger(myZapLogger)</pre>
     ApiVersion23 ApiVersion = 23
     ApiVersion24 ApiVersion = 24
     ApiVersion25 ApiVersion = 25
-    ApiVersion26 ApiVersion = 26  // default
+    ApiVersion26 ApiVersion = 26
+    ApiVersion27 ApiVersion = 27
+    ApiVersion28 ApiVersion = 28
+    ApiVersion29 ApiVersion = 29
+    ApiVersion30 ApiVersion = 30  // default
 )</pre>
+
+<h3>New 1.29 / 1.30 APIs</h3>
+<table>
+<thead><tr><th>ORT</th><th>C API</th><th>Go Binding</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td>1.29+</td><td><code class="ic">SessionOptionsSetWeightlessSourceModelBuffer</code></td><td><code class="ic">SessionOptions.SetWeightlessSourceModelBuffer(data)</code></td><td>Supply initializer bytes for a weightless EPContext source model from memory</td></tr>
+<tr><td>1.30+</td><td><code class="ic">KernelContext_GetPreallocatedOutput</code></td><td>low-level <code class="ic">ortApi.KernelContext_GetPreallocatedOutput</code></td><td>Borrow a preallocated output inside a custom kernel Compute</td></tr>
+</tbody>
+</table>
 
 <h3>Usage</h3>
 <pre>// Method 1: Specify in code
@@ -1187,6 +1237,9 @@ cfg.ApiVersion = ort.ApiVersion23</pre>
 <tr><td><code class="ic">engine.NewTensor(shape, data)</code></td><td>Create Tensor</td></tr>
 <tr><td><code class="ic">engine.AvailableProviders()</code></td><td>Get available Execution Providers</td></tr>
 <tr><td><code class="ic">engine.GetVersion()</code></td><td>Get ONNX Runtime version string</td></tr>
+<tr><td><code class="ic">engine.GetApiVersion()</code></td><td>Get the negotiated ONNX Runtime C API version</td></tr>
+<tr><td><code class="ic">ort.CoreMLProviderOptions</code></td><td>Configure CoreML compute units, model format and ANE conversion hint</td></tr>
+<tr><td><code class="ic">opts.SetWeightlessSourceModelBuffer(data)</code></td><td>Set a weightless EPContext source buffer (ORT 1.29+)</td></tr>
 <tr><td><code class="ic">engine.Destroy()</code></td><td>Release Engine resources</td></tr>
 <tr><td><code class="ic">session.Run(inputs)</code></td><td>Execute inference, returns map[string]*Value</td></tr>
 <tr><td><code class="ic">session.InputNames</code></td><td>Input name list</td></tr>
@@ -1250,7 +1303,7 @@ cfg.ApiVersion = ort.ApiVersion23</pre>
 <ul>
 <li>Windows: <code class="ic">onnxruntime-win-x64-1.x.x.zip</code> (CPU) or <code class="ic">onnxruntime-win-x64-gpu-1.x.x.zip</code> (GPU)</li>
 <li>Linux: <code class="ic">onnxruntime-linux-x64-1.x.x.tgz</code></li>
-<li>macOS: <code class="ic">onnxruntime-osx-arm64-1.x.x.tgz</code></li>
+<li>macOS: <code class="ic">onnxruntime-osx-arm64-1.x.x.tgz</code> (verify that the C/C++ package includes CoreML if needed)</li>
 </ul>
 </div>
 
@@ -1262,6 +1315,15 @@ cfg.ApiVersion = ort.ApiVersion23</pre>
 <li>CUDA Toolkit and cuDNN are correctly installed</li>
 <li>Confirm <code class="ic">CUDAExecutionProvider</code> is in the list via <code class="ic">engine.AvailableProviders()</code></li>
 </ol>
+</div>
+
+<div class="card">
+<h4>Q: Why is CoreMLExecutionProvider not available?</h4>
+<p>Check the loaded <code class="ic">.dylib</code>, not only the operating system. On macOS 10.15+, call
+<code class="ic">engine.AvailableProviders()</code> and confirm <code class="ic">CoreMLExecutionProvider</code>.
+Custom ONNX Runtime builds must include <code class="ic">--use_coreml</code>. If the provider is detected but
+<code class="ic">EnableCoreML</code> fails, inspect provider options and the WARN log; the vision layer falls
+back to CPU.</p>
 </div>
 
 <div class="card">
@@ -1289,7 +1351,7 @@ cfg.ApiVersion = ort.ApiVersion23</pre>
 <p>Windows, Linux, and macOS are supported. Dynamic library loading is adapted for different platforms via the <code class="ic">internal/sys</code> package:</p>
 <ul>
 <li>Windows: Uses <code class="ic">LoadLibrary</code> to load <code class="ic">.dll</code></li>
-<li>Linux/macOS: Uses <code class="ic">dlopen</code> to load <code class="ic">.so</code> / <code class="ic">.dylib</code></li>
+<li>Linux/macOS: Uses <code class="ic">dlopen</code> to load <code class="ic">.so</code> / <code class="ic">.dylib</code>; CoreML requires a CoreML-enabled macOS runtime</li>
 </ul>
 </div>
 

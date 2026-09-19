@@ -111,6 +111,61 @@ go get github.com/DavidSche/raven-onnxruntime
 - 模型统一放在仓库根目录 `models/`，可通过 `RAVEN_MODELS_DIR` 覆盖
 - ONNX Runtime 路径可通过 `RAVEN_ORT_LIB_PATH` 覆盖
 
+### GPU 加速
+
+`OnnxConfig` 支持可选的 CUDA 和 CoreML 执行提供器（Execution Provider）。NVIDIA
+平台使用 CUDA，Apple 平台使用 CoreML；除非确认运行库同时提供这两种 Provider，
+否则不要同时启用。
+
+```go
+import (
+    "runtime"
+
+    "github.com/DavidSche/raven-onnxruntime/ort"
+)
+
+cfg := yolo26.DefaultDetConfig()
+cfg.OnnxRuntimeLibPath = "lib/onnxruntime.dll"
+
+switch runtime.GOOS {
+case "darwin":
+    // Apple GPU / Apple Neural Engine
+    cfg.UseCoreML = true
+    cfg.CoreMLOpts = &ort.CoreMLProviderOptions{
+        MLComputeUnits: "cpuAndGPU", // all | cpuAndGPU | cpuAndNeuralEngine | cpuOnly
+    }
+case "windows", "linux":
+    // NVIDIA GPU
+    cfg.UseCuda = true
+}
+```
+
+CUDA 需要使用 ONNX Runtime GPU 构建版本，并安装该构建要求的 CUDA/cuDNN 运行
+时。较新的官方包通常对应 CUDA 12.x + cuDNN 9.x；ONNX Runtime 1.27+ 的 GPU 包
+默认使用 CUDA 13.0。请确保 CUDA 与 cuDNN 共享库位于 Windows `PATH`，或 Unix/
+macOS 的 `LD_LIBRARY_PATH`/`DYLD_LIBRARY_PATH`。
+
+CoreML 需要使用带 CoreML 执行提供器的 macOS 共享库（构建参数
+`--use_coreml`）。CoreML 要求 macOS 10.15+；建议使用搭载 Apple Neural Engine
+的设备以获得最佳性能。
+
+如果 `AvailableProviders()` 中没有所选执行提供器，`OnnxConfig.New()` 会直接返
+回错误。如果 Provider 已检测到但启用失败，初始化会记录 Warn 日志并降级到 CPU。
+`cfg.New()` 后可确认实际检测到的 Provider：
+
+```go
+providers, err := cfg.OnnxEngine.AvailableProviders()
+if err != nil {
+    panic(err)
+}
+log.Printf("available providers: %v", providers)
+```
+
+更多算子支持范围和 Provider 专属选项，请参考官方
+[CUDA](https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html)
+和 [CoreML](https://onnxruntime.ai/docs/execution-providers/CoreML-ExecutionProvider.html)
+文档。
+
 ### YOLO26 检测
 
 ```go
@@ -295,6 +350,65 @@ import "github.com/DavidSche/raven-onnxruntime/ort/ortlog"
 
 ortlog.SetLogger(myZapLogger) // 实现 ortlog.Logger 接口
 ```
+
+## ONNX Runtime 1.29 / 1.30 新增 API
+
+绑定已对齐 ONNX Runtime 1.30.0（ORT_API_VERSION 30）。默认 API 版本现为 **30**（原 28）；新增两个 C API 绑定：
+
+| ORT 版本 | C API（OrtApi 索引） | Go 绑定 |
+|----------|---------------------|---------|
+| 1.29 | `SessionOptionsSetWeightlessSourceModelBuffer`（#424） | `SessionOptions.SetWeightlessSourceModelBuffer` |
+| 1.30 | `KernelContext_GetPreallocatedOutput`（#425） | 底层 `ortApi.KernelContext_GetPreallocatedOutput` |
+
+### 版本协商（自动降级）
+
+引擎兼容旧版运行时：若请求（或默认）版本不可用，自动降级到所加载库支持的最高版本并输出警告。
+
+```go
+engine, err := ort.NewEngine(libPath, ort.WithApiVersion(ort.ApiVersion30))
+if err != nil {
+    log.Fatal(err)
+}
+defer engine.Destroy()
+
+// 实际协商到的版本（1.30+ 库上为 30，旧库自动降低）
+apiver := engine.GetApiVersion()
+ortVersion := engine.GetVersion() // 例如 "1.30.0"
+```
+
+### 1.29：无权重 EPContext 的内存源模型
+
+从**无权重 EPContext 模型**创建 session 时，EP 可能需要源模型的初始化器数据。`SetWeightlessSourceModelBuffer` 以内存字节缓冲提供——适用于源模型不在磁盘上的场景（如打包内嵌或网络下载）：
+
+```go
+opts, err := engine.NewSessionOptions()
+if err != nil {
+    log.Fatal(err)
+}
+defer opts.Destroy()
+
+// sourceOnnx：原始（带权重）模型的字节内容
+if err := opts.SetWeightlessSourceModelBuffer(sourceOnnx); err != nil {
+    // 需要 ONNX Runtime 1.29+；旧库返回错误
+    log.Fatal(err)
+}
+
+session, err := engine.NewSession("model.ep.context.onnx", opts)
+if err != nil {
+    log.Fatal(err)
+}
+defer session.Destroy()
+```
+
+注意事项：
+
+- 调用方保留缓冲区所有权；其必须在 **session 生命周期内保持有效**。
+- 若同时提供缓冲（本调用）与文件路径（session 配置 `ep.context_source_model_path`），EP 优先使用缓冲。
+- 需要 ONNX Runtime 1.29+；旧版库上该方法返回描述性错误。
+
+### 1.30：自定义 kernel 的预分配输出
+
+`KernelContext_GetPreallocatedOutput`（OrtApi #425）允许自定义 Op kernel 在 `Compute` 内借用调用方预分配的输出 `OrtValue`，避免输出拷贝。本仓在 `ortApi` 结构体层面完成绑定（`KernelContext_GetPreallocatedOutput`，API 版本 ≥ 30 时注册），供通过原始 API 函数表开发 kernel 的作者使用；本仓高层 vision/session API 不直接使用它。字段为 nil 表示所加载运行时早于 1.30。
 
 ## 依赖
 

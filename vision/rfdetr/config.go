@@ -22,6 +22,7 @@ type Config struct {
 
 	DynamicBatch      bool
 	UseCuda           bool
+	UseCoreML         bool // (optional) enable CoreML (macOS GPU/ANE)
 	NumThreads        int
 	EnableCpuMemArena bool
 	ApiVersion        ort.ApiVersion

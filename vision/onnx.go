@@ -16,8 +16,10 @@ type OnnxConfig struct {
 	// Required parameters
 	OnnxRuntimeLibPath string // path to onnxruntime.dll (or .so, .dylib)
 	// Optional parameters
-	UseCuda    bool // (optional) whether to enable CUDA
-	NumThreads int  // (optional) ONNX thread count, default determined by CPU core count
+	UseCuda    bool                       // (optional) whether to enable CUDA
+	UseCoreML  bool                       // (optional) whether to enable CoreML (macOS GPU/ANE; ignored elsewhere)
+	CoreMLOpts *ort.CoreMLProviderOptions // (optional) CoreML EP options; nil = ORT defaults
+	NumThreads int                        // (optional) ONNX thread count, default determined by CPU core count
 
 	// ApiVersion specifies the requested ONNX Runtime C API version.
 	// Default is ort.DefaultApiVersion (currently 28).
@@ -103,51 +105,89 @@ func (cfg *OnnxConfig) New() (err error) {
 	}
 	ortlog.Infow("onnx runtime providers detected",
 		"providers", providers,
-		"useCudaRequested", cfg.UseCuda)
+		"useCudaRequested", cfg.UseCuda,
+		"useCoreMLRequested", cfg.UseCoreML)
 
-	// create session options (set thread count)
+	// create session options（公共设置抽取为闭包：CUDA 降级重建 options 后需重放）
+	applyCommon := func(options *ort.SessionOptions) error {
+		if cfg.NumThreads > 0 {
+			if err := options.SetIntraOpNumThreads(int32(cfg.NumThreads)); err != nil {
+				return fmt.Errorf("failed to set intra-op thread count: %w", err)
+			}
+		}
+		if err := options.SetInterOpNumThreads(1); err != nil {
+			return fmt.Errorf("failed to set inter-op thread count: %w", err)
+		}
+		if err := options.SetExecutionMode(ort.ExecutionModeSequential); err != nil {
+			return fmt.Errorf("failed to set execution mode: %w", err)
+		}
+		if err := options.SetMemPattern(true); err != nil {
+			return fmt.Errorf("failed to set memory pattern: %w", err)
+		}
+		if err := options.SetGraphOptimizationLevel(ort.GraphOptimizationLevelAll); err != nil {
+			return fmt.Errorf("failed to set graph optimization level: %w", err)
+		}
+		// set memory arena strategy
+		if err := options.SetCpuMemArena(cfg.EnableCpuMemArena); err != nil {
+			return fmt.Errorf("failed to set CPU memory arena: %w", err)
+		}
+		return nil
+	}
+
 	options, err := cfg.OnnxEngine.NewSessionOptions()
 	if err != nil {
 		return fmt.Errorf("failed to create SessionOptions: %w", err)
 	}
-	if cfg.NumThreads > 0 {
-		if err := options.SetIntraOpNumThreads(int32(cfg.NumThreads)); err != nil {
-			options.Destroy()
-			return fmt.Errorf("failed to set intra-op thread count: %w", err)
-		}
-	}
-	if err := options.SetInterOpNumThreads(1); err != nil {
+	if err := applyCommon(options); err != nil {
 		options.Destroy()
-		return fmt.Errorf("failed to set inter-op thread count: %w", err)
-	}
-	if err := options.SetExecutionMode(ort.ExecutionModeSequential); err != nil {
-		options.Destroy()
-		return fmt.Errorf("failed to set execution mode: %w", err)
-	}
-	if err := options.SetMemPattern(true); err != nil {
-		options.Destroy()
-		return fmt.Errorf("failed to set memory pattern: %w", err)
-	}
-	if err := options.SetGraphOptimizationLevel(ort.GraphOptimizationLevelAll); err != nil {
-		options.Destroy()
-		return fmt.Errorf("failed to set graph optimization level: %w", err)
+		return err
 	}
 
-	// set memory arena strategy
-	if err := options.SetCpuMemArena(cfg.EnableCpuMemArena); err != nil {
-		options.Destroy()
-		return fmt.Errorf("failed to set CPU memory arena: %w", err)
-	}
-
-	// enable CUDA (on failure, degrade to CPU without interrupting initialization)
+	// enable CUDA（失败降级 CPU，不中断初始化——边界设备韧性：
+	// CUDA EP DLL/驱动损坏时平台仍可用 CPU 完成推理，而非无法启动）
 	if cfg.UseCuda {
 		if !slices.Contains(providers, "CUDAExecutionProvider") {
 			options.Destroy()
 			return fmt.Errorf("CUDA requested but CUDAExecutionProvider not detected in ONNX Runtime")
 		}
 		if err := options.EnableCUDA(); err != nil {
+			// CUDA EP 库加载失败（如 cuDNN 版本不匹配/依赖 DLL 缺失）：
+			// 降级 CPU EP 重建 SessionOptions 并重放公共设置，记 WARN 便于运维定位 GPU 环境。
+			ortlog.Warnw("failed to enable CUDA; degrading to CPU execution provider",
+				"error", err,
+			)
 			options.Destroy()
-			return fmt.Errorf("failed to enable CUDA: %w", err)
+			options, err = cfg.OnnxEngine.NewSessionOptions()
+			if err != nil {
+				return fmt.Errorf("failed to create SessionOptions (cpu fallback): %w", err)
+			}
+			if err := applyCommon(options); err != nil {
+				options.Destroy()
+				return err
+			}
+		}
+	}
+
+	// enable CoreML（macOS GPU/ANE 加速；语义与 CUDA 链一致：pre-check fail-fast +
+	// enable 失败降级 CPU。非 Apple 构建未编入 CoreML EP，pre-check 报错即暴露配置错误）
+	if cfg.UseCoreML {
+		if !slices.Contains(providers, "CoreMLExecutionProvider") {
+			options.Destroy()
+			return fmt.Errorf("CoreML requested but CoreMLExecutionProvider not detected in ONNX Runtime")
+		}
+		if err := options.EnableCoreML(cfg.CoreMLOpts); err != nil {
+			ortlog.Warnw("failed to enable CoreML; degrading to CPU execution provider",
+				"error", err,
+			)
+			options.Destroy()
+			options, err = cfg.OnnxEngine.NewSessionOptions()
+			if err != nil {
+				return fmt.Errorf("failed to create SessionOptions (cpu fallback): %w", err)
+			}
+			if err := applyCommon(options); err != nil {
+				options.Destroy()
+				return err
+			}
 		}
 	}
 

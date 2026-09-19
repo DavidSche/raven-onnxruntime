@@ -25,6 +25,7 @@ type Config struct {
 
 	// 运行时参数
 	UseCuda           bool
+	UseCoreML         bool // (optional) enable CoreML (macOS GPU/ANE)
 	NumThreads        int
 	EnableCpuMemArena bool
 	PreprocessConfig  vision.PreprocessConfig

@@ -41,6 +41,7 @@ type Config struct {
 
 	// Optional parameters
 	UseCuda           bool           // (optional) enable CUDA
+	UseCoreML         bool           // (optional) enable CoreML (macOS GPU/ANE)
 	NumThreads        int            // (optional) ONNX thread count, default determined by CPU cores
 	EnableCpuMemArena bool           // (optional) enable ONNX memory pool
 	ApiVersion        ort.ApiVersion // (optional) ONNX Runtime C API version, default ort.DefaultApiVersion

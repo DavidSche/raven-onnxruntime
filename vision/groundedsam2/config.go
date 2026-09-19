@@ -18,6 +18,7 @@ type Config struct {
 	ModelPath          string
 	OnnxRuntimeLibPath string
 	UseCuda            bool
+	UseCoreML          bool // (optional) enable CoreML (macOS GPU/ANE)
 	NumThreads         int
 	EnableCpuMemArena  bool
 	PreprocessConfig   vision.PreprocessConfig
