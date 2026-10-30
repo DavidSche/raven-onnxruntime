@@ -36,7 +36,7 @@ jobs:
       # 基线已清零（vision/ 全部告警已修复），因此这里对 PR 与 push 一视同仁：
       # 任何一条告警都会让 CI 失败，防止回潮。
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
           # 固定版本：.golangci.yml 是 v1 配置格式，跟随 latest 会在 v2 发布时
           # 因配置 schema 不兼容而让 lint 直接失败；升级时请同步迁移配置。
