@@ -8,9 +8,10 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/ebitengine/purego"
+
 	"github.com/DavidSche/raven-onnxruntime/ort/internal/sys"
 	"github.com/DavidSche/raven-onnxruntime/ort/ortlog"
-	"github.com/ebitengine/purego"
 )
 
 type ApiVersion uint32
@@ -30,8 +31,9 @@ const (
 	ApiVersion28 ApiVersion = 28
 	ApiVersion29 ApiVersion = 29
 	ApiVersion30 ApiVersion = 30
+	ApiVersion31 ApiVersion = 31
 
-	DefaultApiVersion = ApiVersion30
+	DefaultApiVersion = ApiVersion31
 
 	LogVerbose LoggingLevel = 0
 	LogInfo    LoggingLevel = 1
@@ -43,7 +45,7 @@ const (
 )
 
 var supportedApiVersions = []ApiVersion{
-	ApiVersion30, ApiVersion29, ApiVersion28, ApiVersion27, ApiVersion26, ApiVersion25,
+	ApiVersion31, ApiVersion30, ApiVersion29, ApiVersion28, ApiVersion27, ApiVersion26, ApiVersion25,
 	ApiVersion24, ApiVersion23, ApiVersion22, ApiVersion21,
 	ApiVersion20, ApiVersion19, ApiVersion18, ApiVersion17,
 }
@@ -117,7 +119,7 @@ func (e *Engine) AvailableProviders() ([]string, error) {
 // Version negotiation strategy:
 //  1. Prefer the version specified by WithApiVersion
 //  2. Then read the environment variable ORT_API_VERSION
-//  3. Default to DefaultApiVersion (currently 30)
+//  3. Default to DefaultApiVersion (currently 31)
 //  4. If the requested version is unavailable, automatically downgrade to the highest version supported by the library
 func NewEngine(libPath string, opts ...EngineOption) (*Engine, error) {
 	requestedVersion := resolveApiVersion(opts)
@@ -307,6 +309,12 @@ func (e *Engine) initApi() (err error) {
 		purego.RegisterFunc(&e.funcs.getPreallocatedOutput, e.api.KernelContext_GetPreallocatedOutput)
 	}
 
+	// ORT 1.31+ APIs
+	if e.version >= ApiVersion31 {
+		purego.RegisterFunc(&e.funcs.setEpContextDataReadFunc, e.api.SessionOptionsSetEpContextDataReadFunc)
+		purego.RegisterFunc(&e.funcs.getModelPackageApi, e.api.GetModelPackageApi)
+	}
+
 	return nil
 }
 
@@ -341,7 +349,7 @@ func (e *Engine) GetVersion() string {
 	return e.funcs.getVersionString()
 }
 
-// GetApiVersion returns the negotiated ONNX Runtime C API version (e.g. 28).
+// GetApiVersion returns the negotiated ONNX Runtime C API version (e.g. 31).
 func (e *Engine) GetApiVersion() ApiVersion {
 	return e.version
 }

@@ -1169,10 +1169,10 @@ ortlog.SetLogger(myZapLogger)</pre>
 <pre>[INFO] yolo26 det timings  modelPath=...  batchSize=4  preprocess=2.1ms  run=5.3ms  postprocess=0.8ms  total=8.2ms  count=60</pre>
 
 <h2 id="api-ver" class="sa">API Version Negotiation</h2>
-<p>raven-onnxruntime is aligned with ONNX Runtime 1.30.0 / C API version 30 and supports automatic downgrade for compatibility with different versions of the shared library.</p>
+<p>raven-onnxruntime is aligned with ONNX Runtime 1.31.1 / C API version 31 and supports automatic downgrade for compatibility with different versions of the shared library.</p>
 
 <h3>Version Negotiation Strategy</h3>
-<div class="arch">Code WithApiVersion(23)    Env ORT_API_VERSION=20    Default DefaultApiVersion(30)
+<div class="arch">Code WithApiVersion(23)    Env ORT_API_VERSION=20    Default DefaultApiVersion(31)
          ↓                         ↓                           ↓
          └─────────── resolveApiVersion() priority ─────────────┘
                      Code parameter > Environment variable > Default value
@@ -1201,15 +1201,18 @@ ortlog.SetLogger(myZapLogger)</pre>
     ApiVersion27 ApiVersion = 27
     ApiVersion28 ApiVersion = 28
     ApiVersion29 ApiVersion = 29
-    ApiVersion30 ApiVersion = 30  // default
+    ApiVersion30 ApiVersion = 30
+    ApiVersion31 ApiVersion = 31  // default
 )</pre>
 
-<h3>New 1.29 / 1.30 APIs</h3>
+<h3>New 1.29 / 1.30 / 1.31 APIs</h3>
 <table>
 <thead><tr><th>ORT</th><th>C API</th><th>Go Binding</th><th>Purpose</th></tr></thead>
 <tbody>
 <tr><td>1.29+</td><td><code class="ic">SessionOptionsSetWeightlessSourceModelBuffer</code></td><td><code class="ic">SessionOptions.SetWeightlessSourceModelBuffer(data)</code></td><td>Supply initializer bytes for a weightless EPContext source model from memory</td></tr>
 <tr><td>1.30+</td><td><code class="ic">KernelContext_GetPreallocatedOutput</code></td><td>low-level <code class="ic">ortApi.KernelContext_GetPreallocatedOutput</code></td><td>Borrow a preallocated output inside a custom kernel Compute</td></tr>
+<tr><td>1.31+</td><td><code class="ic">SessionOptionsSetEpContextDataReadFunc</code></td><td>low-level <code class="ic">ortApi.SessionOptionsSetEpContextDataReadFunc</code></td><td>Register an application-managed read callback for external EPContext data</td></tr>
+<tr><td>1.31+</td><td><code class="ic">GetModelPackageApi</code></td><td>low-level <code class="ic">ortApi.GetModelPackageApi</code></td><td>Obtain the stable <code class="ic">OrtModelPackageApi</code> table (model package inspection / variant selection)</td></tr>
 </tbody>
 </table>
 

@@ -3,17 +3,12 @@ package ltdetr
 import (
 	"fmt"
 	"image"
-	"image/draw"
-	"math"
 	"os"
 	"strings"
 
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
 	"github.com/DavidSche/raven-onnxruntime/vision"
 )
-
-var imagenetMeans = [3]float32{0.485, 0.456, 0.406}
-var imagenetStds = [3]float32{0.229, 0.224, 0.225}
 
 var ltdetrModelResolutions = map[string]int{
 	"vitt16-ltdetr":     640,
@@ -24,14 +19,6 @@ var ltdetrModelResolutions = map[string]int{
 	"tiny-ltdetr":       640,
 	"ltdetr-coco":       640,
 	"ltdetr":            640,
-}
-
-func detectInputSize(modelPath string) int {
-	size, _ := detectInputSizeAndDynamicBatch(modelPath)
-	if size <= 0 {
-		size = 640
-	}
-	return size
 }
 
 func detectInputSizeAndDynamicBatch(modelPath string) (int, bool) {
@@ -64,9 +51,7 @@ func parseOnnxInputSizeAndDynamicBatch(modelPath string) (int, bool, error) {
 }
 
 type onnxInputInfo struct {
-	name         string
 	dims         []int64
-	dtype        int32
 	dynamicBatch bool
 }
 
@@ -231,7 +216,6 @@ func decodeVarint(data []byte, pos int) (uint64, int) {
 
 type imageParams struct {
 	origW, origH int
-	padX, padY   int
 }
 
 func preprocess(img image.Image, inputSize int, session *ort.Session, ppCfg vision.PreprocessConfig) (*ort.Value, imageParams, error) {
@@ -291,10 +275,6 @@ func preprocessBatch(imgs []image.Image, inputSize int, session *ort.Session, pp
 	return tensor, paramsList, err
 }
 
-func sigmoid(x float32) float32 {
-	return 1.0 / (1.0 + float32(math.Exp(float64(-x))))
-}
-
 // boxXyxyToOrigScale converts xyxy pixel coordinates from the model input size
 // to the original image scale. LTDETR ONNX outputs boxes in xyxy absolute pixel
 // coordinates relative to the input resolution (e.g. 640x640).
@@ -308,53 +288,4 @@ func boxXyxyToOrigScale(x1, y1, x2, y2 float32, inputSize int, origW, origH int)
 	origY2 := min(origH, int(y2*scaleY))
 
 	return image.Rect(origX1, origY1, origX2, origY2)
-}
-
-type rawRGBImage interface {
-	RawRGB() ([]byte, int)
-}
-
-func fillCHWFromImage(data []float32, img image.Image, inputSize int) {
-	planeSize := inputSize * inputSize
-
-	switch src := img.(type) {
-	case rawRGBImage:
-		pix, stride := src.RawRGB()
-		for y := 0; y < inputSize; y++ {
-			rowBase := y * stride
-			dstBase := y * inputSize
-			for x := 0; x < inputSize; x++ {
-				srcIdx := rowBase + x*3
-				dstIdx := dstBase + x
-				data[dstIdx] = (float32(pix[srcIdx])/255.0 - imagenetMeans[0]) / imagenetStds[0]
-				data[planeSize+dstIdx] = (float32(pix[srcIdx+1])/255.0 - imagenetMeans[1]) / imagenetStds[1]
-				data[2*planeSize+dstIdx] = (float32(pix[srcIdx+2])/255.0 - imagenetMeans[2]) / imagenetStds[2]
-			}
-		}
-	case *image.RGBA:
-		fillCHWFromRGBA(data, src.Pix, src.Stride, inputSize)
-	case *image.NRGBA:
-		rgba := image.NewRGBA(src.Bounds())
-		draw.Draw(rgba, rgba.Bounds(), src, src.Bounds().Min, draw.Src)
-		fillCHWFromRGBA(data, rgba.Pix, rgba.Stride, inputSize)
-	default:
-		rgba := image.NewRGBA(img.Bounds())
-		draw.Draw(rgba, rgba.Bounds(), img, img.Bounds().Min, draw.Src)
-		fillCHWFromRGBA(data, rgba.Pix, rgba.Stride, inputSize)
-	}
-}
-
-func fillCHWFromRGBA(data []float32, pix []byte, stride, inputSize int) {
-	planeSize := inputSize * inputSize
-	for y := 0; y < inputSize; y++ {
-		rowBase := y * stride
-		dstBase := y * inputSize
-		for x := 0; x < inputSize; x++ {
-			srcIdx := rowBase + x*4
-			dstIdx := dstBase + x
-			data[dstIdx] = (float32(pix[srcIdx])/255.0 - imagenetMeans[0]) / imagenetStds[0]
-			data[planeSize+dstIdx] = (float32(pix[srcIdx+1])/255.0 - imagenetMeans[1]) / imagenetStds[1]
-			data[2*planeSize+dstIdx] = (float32(pix[srcIdx+2])/255.0 - imagenetMeans[2]) / imagenetStds[2]
-		}
-	}
 }

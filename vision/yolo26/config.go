@@ -101,17 +101,6 @@ type imageParams struct {
 	padX, padY   int // letterbox padding in model coordinate space
 }
 
-// candidate holds a detection candidate
-type candidate struct {
-	box          [4]float32
-	origBox      image.Rectangle
-	score        float32
-	classID      int
-	maskCoeffs   []float32
-	rawKeyPoints []float32
-	angle        float32
-}
-
 // DetResult holds object detection result
 type DetResult struct {
 	ClassID int

@@ -26,15 +26,6 @@ var dfineModelResolutions = map[string]int{
 	"dfine":     640,
 }
 
-// detectInputSize detects the model input size from the model path or ONNX metadata.
-func detectInputSize(modelPath string) int {
-	size, _ := detectInputSizeAndDynamicBatch(modelPath)
-	if size <= 0 {
-		size = 640
-	}
-	return size
-}
-
 // detectInputSizeAndDynamicBatch detects the input resolution and whether
 // the model supports a dynamic batch dimension.
 func detectInputSizeAndDynamicBatch(modelPath string) (int, bool) {
@@ -83,9 +74,7 @@ func parseOnnxInputSizeAndDynamicBatch(modelPath string) (int, bool, error) {
 // ---------------------------------------------------------------------------
 
 type onnxInputInfo struct {
-	name         string
 	dims         []int64
-	dtype        int32
 	dynamicBatch bool
 }
 
@@ -246,31 +235,6 @@ func decodeVarint(data []byte, pos int) (uint64, int) {
 // ---------------------------------------------------------------------------
 // Image preprocessing
 // ---------------------------------------------------------------------------
-
-// preprocess resizes and normalizes a single image for D-FINE models.
-// Uses ImageNet normalization and simple resize (no letterbox).
-func preprocess(img image.Image, inputSize int, session *ort.Session, ppCfg vision.PreprocessConfig) (*ort.Value, imageParams, error) {
-	if img == nil {
-		return nil, imageParams{}, fmt.Errorf("input image is nil")
-	}
-	bounds := img.Bounds()
-	params := imageParams{
-		origW: bounds.Dx(),
-		origH: bounds.Dy(),
-	}
-
-	means, stds := vision.GetNormalizeParams(ppCfg)
-	resized := vision.Resize(img, inputSize, inputSize, ppCfg.Interpolation)
-
-	data := make([]float32, 3*inputSize*inputSize)
-	planeSize := inputSize * inputSize
-	if err := vision.FillCHWFromImage(data, resized, planeSize, inputSize, inputSize, inputSize, means, stds); err != nil {
-		return nil, imageParams{}, fmt.Errorf("failed to fill CHW data: %w", err)
-	}
-
-	tensor, err := session.NewTensor([]int64{1, 3, int64(inputSize), int64(inputSize)}, data)
-	return tensor, params, err
-}
 
 // preprocessBatch resizes and normalizes a batch of images.
 func preprocessBatch(imgs []image.Image, inputSize int, session *ort.Session, ppCfg vision.PreprocessConfig) (*ort.Value, []imageParams, error) {

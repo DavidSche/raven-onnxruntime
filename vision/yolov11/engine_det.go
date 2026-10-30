@@ -5,9 +5,10 @@ import (
 	"image"
 	"log"
 
+	"github.com/up-zero/gotool/convertutil"
+
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
 	"github.com/DavidSche/raven-onnxruntime/vision"
-	"github.com/up-zero/gotool/convertutil"
 )
 
 // DetEngine YOLOv11-det Engine

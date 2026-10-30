@@ -39,8 +39,8 @@ func gatedRuntimeContext(cfg Config) AnomalyRuntimeContext {
 		CameraID:                 cfg.CalibrationContext.CameraID,
 		StreamID:                 "gated-stream",
 		CaptureResolution:        cfg.CalibrationContext.CaptureResolution,
-		DecodedResolution:        cfg.InputSize,
-		ROIResolution:            cfg.InputSize,
+		DecodedResolution:        cfg.CalibrationContext.DecodedResolution,
+		ROIResolution:            cfg.CalibrationContext.DecodedResolution,
 		ROIPolicyHash:            cfg.CalibrationContext.ROIPolicyHash,
 		ROIPolicyVersion:         cfg.CalibrationContext.ROIPolicyVersion,
 		LightingProfile:          cfg.CalibrationContext.LightingProfile,
@@ -66,7 +66,7 @@ func gradientImage(size image.Point) image.Image {
 }
 
 func TestAnomalyEngineLoadsProductionGraphs(t *testing.T) {
-	for _, variant := range []string{"efficientad-s", "padim-r18"} {
+	for _, variant := range []string{"efficientad-s", "padim-r18", "patchcore-r18-pcm25-v3"} {
 		t.Run(variant, func(t *testing.T) {
 			cfg := gatedFixtureConfig(t, variant)
 			engine, err := NewEngine(cfg)
@@ -75,6 +75,58 @@ func TestAnomalyEngineLoadsProductionGraphs(t *testing.T) {
 			}
 			engine.Destroy()
 		})
+	}
+}
+
+func TestAnomalyEnginePredictsPatchCoreSingleFrame(t *testing.T) {
+	cfg := gatedFixtureConfig(t, "patchcore-r18-pcm25-v3")
+	cfg.OutputAnomalyMap = true
+	cfg.MapDownsample = 1
+	engine, err := NewEngine(cfg)
+	if err != nil {
+		t.Fatalf("NewEngine() error = %v", err)
+	}
+	defer engine.Destroy()
+
+	input := gradientImage(cfg.CalibrationContext.DecodedResolution)
+	runtimeCtx := gatedRuntimeContext(cfg)
+	result, err := engine.PredictAnomaly(input, runtimeCtx)
+	if err != nil {
+		t.Fatalf("PredictAnomaly() error = %v", err)
+	}
+	if result == nil {
+		t.Fatal("PredictAnomaly returned nil result")
+	}
+	if engine.EPFallbackTotal() != 0 {
+		t.Fatalf("EPFallbackTotal = %d, want 0 for CPU-required PatchCore", engine.EPFallbackTotal())
+	}
+	if !isFiniteFloat32(result.Score) {
+		t.Fatalf("non-finite score %v", result.Score)
+	}
+	if result.ScoreSemantics != ScoreSemanticsMapMax {
+		t.Fatalf("ScoreSemantics = %q, want %q", result.ScoreSemantics, ScoreSemanticsMapMax)
+	}
+	if len(result.AnomalyMap) != cfg.InputSize.X*cfg.InputSize.Y {
+		t.Fatalf("anomaly map size = %d, want %d", len(result.AnomalyMap), cfg.InputSize.X*cfg.InputSize.Y)
+	}
+	if result.MapSourceWidth != cfg.InputSize.X || result.MapSourceHeight != cfg.InputSize.Y {
+		t.Fatalf("source map size = %dx%d, want %v", result.MapSourceWidth, result.MapSourceHeight, cfg.InputSize)
+	}
+	if result.MapWidth != cfg.InputSize.X || result.MapHeight != cfg.InputSize.Y {
+		t.Fatalf("returned map size = %dx%d, want %v", result.MapWidth, result.MapHeight, cfg.InputSize)
+	}
+	scoreMax := maxFloat32(result.AnomalyMap)
+	scoreTolerance := cfg.ScoreContract.Assertion.Atol + cfg.ScoreContract.Assertion.Rtol*math.Max(math.Abs(float64(scoreMax)), 1e-12)
+	if scoreError := math.Abs(float64(result.Score - scoreMax)); scoreError > scoreTolerance {
+		t.Fatalf("score %v is not anomaly-map maximum %v (error %v > %v)", result.Score, scoreMax, scoreError, scoreTolerance)
+	}
+
+	second, err := engine.PredictAnomaly(input, runtimeCtx)
+	if err != nil {
+		t.Fatalf("second PredictAnomaly() error = %v", err)
+	}
+	if second.Score != result.Score || !equalFloat32(result.AnomalyMap, second.AnomalyMap) {
+		t.Fatalf("PatchCore prediction was not deterministic: %v vs %v", result.Score, second.Score)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -19,11 +20,19 @@ func writeFixtureLayout(t *testing.T, root, variant string) {
 			t.Fatal(err)
 		}
 	}
+	if strings.HasPrefix(variant, "patchcore-r18") {
+		for _, name := range patchCoreExtraFixtureNames {
+			path := filepath.Join(dir, filepath.FromSlash(name))
+			if err := os.WriteFile(path, []byte("fixture"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 }
 
 func TestCheckFixtureGateAcceptsCompleteRealFixtureLayout(t *testing.T) {
 	root := t.TempDir()
-	for _, variant := range []string{"efficientad-s", "padim-r18"} {
+	for _, variant := range []string{"efficientad-s", "padim-r18", "patchcore-r18"} {
 		writeFixtureLayout(t, root, variant)
 	}
 	if err := CheckFixtureGate(root); err != nil {
@@ -33,7 +42,7 @@ func TestCheckFixtureGateAcceptsCompleteRealFixtureLayout(t *testing.T) {
 
 func TestCheckFixtureGateRejectsMissingRequiredFile(t *testing.T) {
 	root := t.TempDir()
-	for _, variant := range []string{"efficientad-s", "padim-r18"} {
+	for _, variant := range []string{"efficientad-s", "padim-r18", "patchcore-r18"} {
 		writeFixtureLayout(t, root, variant)
 	}
 	if err := os.Remove(filepath.Join(root, "padim-r18", "reference", "golden_outputs.npz")); err != nil {
@@ -50,7 +59,7 @@ func TestCheckFixtureGateRejectsMissingLayoutAndEmptyFile(t *testing.T) {
 		t.Fatalf("missing layout error = %v, want ErrM1G0NotSatisfied", err)
 	}
 	root := t.TempDir()
-	for _, variant := range []string{"efficientad-s", "padim-r18"} {
+	for _, variant := range []string{"efficientad-s", "padim-r18", "patchcore-r18"} {
 		writeFixtureLayout(t, root, variant)
 	}
 	if err := os.WriteFile(filepath.Join(root, "efficientad-s", "model.onnx"), nil, 0o644); err != nil {

@@ -22,7 +22,7 @@ type OnnxConfig struct {
 	NumThreads int                        // (optional) ONNX thread count, default determined by CPU core count
 
 	// ApiVersion specifies the requested ONNX Runtime C API version.
-	// Default is ort.DefaultApiVersion (currently 28).
+	// Default is ort.DefaultApiVersion (currently 31).
 	// If the specified version is unavailable, NewEngine will automatically downgrade to the highest version supported by the library.
 	// Can also be overridden via the ORT_API_VERSION environment variable.
 	ApiVersion ort.ApiVersion

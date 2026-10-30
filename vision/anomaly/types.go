@@ -169,6 +169,7 @@ type Config struct {
 	InputLimits                     InputLimitsConfig
 	ExecutionProviderFallbackMetric string
 	ExecutionProviderPolicy         map[string]string
+	RuntimeConfigHash               string
 	ExportProfile                   string
 	DeploymentProfile               string
 	ValidatedVariant                string

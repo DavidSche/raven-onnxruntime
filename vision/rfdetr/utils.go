@@ -15,9 +15,6 @@ import (
 
 var colorGray255 = color.Gray{Y: 255}
 
-var imagenetMeans = [3]float32{0.485, 0.456, 0.406}
-var imagenetStds = [3]float32{0.229, 0.224, 0.225}
-
 var rfdetrModelResolutions = map[string]int{
 	"rf-detr-nano":        384,
 	"rf-detr-small":       512,
@@ -69,9 +66,9 @@ func detectInputSizeAndDynamicBatch(modelPath string) (int, bool) {
 	return 640, false
 }
 
-// parseOnnxMetadataResolution reads the top-level ModelProto ``metadata_props``
+// parseOnnxMetadataResolution reads the top-level ModelProto “metadata_props“
 // (field 14, repeated StringStringEntryProto: key=1, value=2) and returns the
-// integer ``resolution`` prop when present. Used as a fallback for models whose
+// integer “resolution“ prop when present. Used as a fallback for models whose
 // graph input dims are symbolic (dynamic H/W) so the engine still feeds the
 // resolution the graph was exported at.
 func parseOnnxMetadataResolution(modelPath string) (int, bool) {
@@ -111,11 +108,6 @@ func parseStringStringEntry(data []byte) (string, string, bool) {
 	return key, val, hasKey && hasVal
 }
 
-func parseOnnxInputSize(modelPath string) (int, error) {
-	size, _, err := parseOnnxInputSizeAndDynamicBatch(modelPath)
-	return size, err
-}
-
 func parseOnnxInputSizeAndDynamicBatch(modelPath string) (int, bool, error) {
 	data, err := os.ReadFile(modelPath)
 	if err != nil {
@@ -137,9 +129,7 @@ func parseOnnxInputSizeAndDynamicBatch(modelPath string) (int, bool, error) {
 }
 
 type onnxInputInfo struct {
-	name         string
 	dims         []int64
-	dtype        int32
 	dynamicBatch bool
 }
 
@@ -304,7 +294,6 @@ func decodeVarint(data []byte, pos int) (uint64, int) {
 
 type imageParams struct {
 	origW, origH int
-	tpadX, padY  int
 }
 
 func preprocess(img image.Image, inputSize int, session *ort.Session, ppCfg vision.PreprocessConfig) (*ort.Value, imageParams, error) {
@@ -405,16 +394,4 @@ func resizeMask(maskData []float32, maskH, maskW int, origBox image.Rectangle, o
 	}
 
 	return finalMask
-}
-
-type rawRGBImage interface {
-	RawRGB() ([]byte, int)
-}
-
-func fillCHWFromImage(data []float32, img image.Image, inputSize int) error {
-	return vision.FillCHWFromImage(data, img, inputSize*inputSize, inputSize, inputSize, inputSize, &imagenetMeans, &imagenetStds)
-}
-
-func fillCHWFromRGBA(data []float32, pix []byte, stride, inputSize int) error {
-	return vision.FillCHWFromRGBA(data, pix, stride, inputSize*inputSize, inputSize, inputSize, inputSize, &imagenetMeans, &imagenetStds)
 }

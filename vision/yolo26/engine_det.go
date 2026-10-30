@@ -6,10 +6,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/up-zero/gotool/convertutil"
+
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
 	"github.com/DavidSche/raven-onnxruntime/ort/ortlog"
 	"github.com/DavidSche/raven-onnxruntime/vision"
-	"github.com/up-zero/gotool/convertutil"
 )
 
 // DetEngine YOLO26-det Engine

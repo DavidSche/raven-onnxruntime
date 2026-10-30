@@ -17,7 +17,7 @@ type benchmarkFailure struct {
 	err error
 }
 
-func gatedBenchmarkLibraryPath(b *testing.B) string {
+func gatedBenchmarkLibraryPath(b testing.TB) string {
 	b.Helper()
 	if path := os.Getenv("RAVEN_ORT_LIB_PATH"); path != "" {
 		return path

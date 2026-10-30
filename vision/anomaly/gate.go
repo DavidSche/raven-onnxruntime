@@ -12,11 +12,13 @@ const RuntimeContract = "anomaly-v1"
 
 // ExportProfile is the only production export profile for v1.
 const ExportProfile = "anomaly-export-v1"
+const PatchCoreExportProfile = "anomaly-export-patchcore-v1"
 
 // Production validated variants are explicitly enumerated.
 const (
 	ValidatedEfficientAdSmall = "efficientad-s-256"
 	ValidatedPadimR18         = "padim-r18-256"
+	ValidatedPatchcoreR18     = "patchcore-r18-256"
 )
 
 // ErrM1G0NotSatisfied blocks engine construction until the required real
@@ -53,6 +55,11 @@ var fixtureNames = []string{
 	"reference/golden_outputs.npz",
 }
 
+var patchCoreExtraFixtureNames = []string{
+	"reference/preprocess_golden.npz",
+	"reference/onnx_operator_audit.json",
+}
+
 // CheckFixtureGate verifies that both required M1-G0 fixture directories are
 // present. It intentionally checks file presence only; artifact semantics,
 // checksums and numeric evidence are validated by anomaly_export's machine
@@ -67,6 +74,7 @@ func CheckFixtureGate(fixturesDir string) error {
 	}{
 		{directory: "efficientad-s", name: ValidatedEfficientAdSmall},
 		{directory: "padim-r18", name: ValidatedPadimR18},
+		{directory: "patchcore-r18", name: ValidatedPatchcoreR18},
 	}
 	for _, variant := range requiredVariants {
 		variantDir := filepath.Join(fixturesDir, variant.directory)
@@ -77,7 +85,11 @@ func CheckFixtureGate(fixturesDir string) error {
 		if !info.IsDir() {
 			return fmt.Errorf("%w: fixture path is not a directory: %s", ErrM1G0NotSatisfied, variantDir)
 		}
-		for _, name := range fixtureNames {
+		expectedNames := fixtureNames
+		if variant.name == ValidatedPatchcoreR18 {
+			expectedNames = append(append([]string{}, fixtureNames...), patchCoreExtraFixtureNames...)
+		}
+		for _, name := range expectedNames {
 			path := filepath.Join(variantDir, filepath.FromSlash(name))
 			info, err := os.Stat(path)
 			if err != nil {
@@ -89,6 +101,38 @@ func CheckFixtureGate(fixturesDir string) error {
 			if info.Size() == 0 {
 				return fmt.Errorf("%w: fixture file is empty: %s", ErrM1G0NotSatisfied, path)
 			}
+		}
+	}
+	return nil
+}
+
+// CheckPatchCoreFixtureGate verifies the independent PatchCore fixture path.
+// It deliberately checks file presence only; LoadConfig performs all semantic
+// and checksum validation.
+func CheckPatchCoreFixtureGate(fixturesDir string) error {
+	if fixturesDir == "" {
+		return fmt.Errorf("%w: PatchCore fixtures directory is empty", ErrM1G0NotSatisfied)
+	}
+	variantDir := filepath.Join(fixturesDir, "patchcore-r18-pcm25-v3")
+	info, err := os.Stat(variantDir)
+	if err != nil {
+		return fmt.Errorf("%w: missing PatchCore fixture directory %s", ErrM1G0NotSatisfied, variantDir)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%w: PatchCore fixture path is not a directory: %s", ErrM1G0NotSatisfied, variantDir)
+	}
+	expectedNames := append(append([]string{}, fixtureNames...), patchCoreExtraFixtureNames...)
+	for _, name := range expectedNames {
+		path := filepath.Join(variantDir, filepath.FromSlash(name))
+		info, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("%w: missing PatchCore fixture file %s", ErrM1G0NotSatisfied, path)
+		}
+		if info.IsDir() {
+			return fmt.Errorf("%w: PatchCore fixture file is a directory: %s", ErrM1G0NotSatisfied, path)
+		}
+		if info.Size() == 0 {
+			return fmt.Errorf("%w: PatchCore fixture file is empty: %s", ErrM1G0NotSatisfied, path)
 		}
 	}
 	return nil

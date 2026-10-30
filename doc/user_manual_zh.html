@@ -1169,10 +1169,10 @@ ortlog.SetLogger(myZapLogger)</pre>
 <pre>[INFO] yolo26 det timings  modelPath=...  batchSize=4  preprocess=2.1ms  run=5.3ms  postprocess=0.8ms  total=8.2ms  count=60</pre>
 
 <h2 id="api-ver" class="sa">API 版本协商</h2>
-<p>raven-onnxruntime 已对齐 ONNX Runtime 1.30.0 / C API 版本 30，并支持自动降级以兼容不同版本的共享库。</p>
+<p>raven-onnxruntime 已对齐 ONNX Runtime 1.31.1 / C API 版本 31，并支持自动降级以兼容不同版本的共享库。</p>
 
 <h3>版本协商策略</h3>
-<div class="arch">代码 WithApiVersion(23)    环境变量 ORT_API_VERSION=20    默认 DefaultApiVersion(30)
+<div class="arch">代码 WithApiVersion(23)    环境变量 ORT_API_VERSION=20    默认 DefaultApiVersion(31)
          ↓                         ↓                           ↓
          └─────────── resolveApiVersion() 优先级 ──────────────┘
                      代码参数 &gt; 环境变量 &gt; 默认值
@@ -1201,15 +1201,18 @@ ortlog.SetLogger(myZapLogger)</pre>
     ApiVersion27 ApiVersion = 27
     ApiVersion28 ApiVersion = 28
     ApiVersion29 ApiVersion = 29
-    ApiVersion30 ApiVersion = 30  // 默认
+    ApiVersion30 ApiVersion = 30
+    ApiVersion31 ApiVersion = 31  // 默认
 )</pre>
 
-<h3>1.29 / 1.30 新增 API</h3>
+<h3>1.29 / 1.30 / 1.31 新增 API</h3>
 <table>
 <thead><tr><th>ORT</th><th>C API</th><th>Go 绑定</th><th>用途</th></tr></thead>
 <tbody>
 <tr><td>1.29+</td><td><code class="ic">SessionOptionsSetWeightlessSourceModelBuffer</code></td><td><code class="ic">SessionOptions.SetWeightlessSourceModelBuffer(data)</code></td><td>以内存缓冲为无权重 EPContext 源模型提供初始化器字节</td></tr>
 <tr><td>1.30+</td><td><code class="ic">KernelContext_GetPreallocatedOutput</code></td><td>底层 <code class="ic">ortApi.KernelContext_GetPreallocatedOutput</code></td><td>在自定义 kernel Compute 内借用预分配输出</td></tr>
+<tr><td>1.31+</td><td><code class="ic">SessionOptionsSetEpContextDataReadFunc</code></td><td>底层 <code class="ic">ortApi.SessionOptionsSetEpContextDataReadFunc</code></td><td>注册应用自行管理的外部 EPContext 数据读取回调</td></tr>
+<tr><td>1.31+</td><td><code class="ic">GetModelPackageApi</code></td><td>底层 <code class="ic">ortApi.GetModelPackageApi</code></td><td>获取稳定的 <code class="ic">OrtModelPackageApi</code> 表（Model Package 检视 / 变体选择）</td></tr>
 </tbody>
 </table>
 

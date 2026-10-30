@@ -30,6 +30,7 @@ const (
 	deploymentDevelopment       = "development"
 	modelKindEfficientAD        = "efficient-ad"
 	modelKindPadim              = "padim"
+	modelKindPatchcore          = "patchcore"
 	normalizeDivide255          = "divide_255"
 	normalizeImageNet           = "imagenet"
 	providerRequired            = "required"
@@ -40,6 +41,10 @@ const (
 // may point to the RMP directory or to any file inside it, including
 // model.onnx. The returned Config is a detached copy suitable for NewEngine.
 func LoadConfig(modelPath string) (Config, error) {
+	return loadConfig(modelPath, true)
+}
+
+func loadConfig(modelPath string, requirePatchCoreProfile bool) (Config, error) {
 	if modelPath == "" {
 		return Config{}, fmt.Errorf("%w: model path is empty", ErrInvalidConfig)
 	}
@@ -73,10 +78,162 @@ func LoadConfig(modelPath string) (Config, error) {
 	if err := validateStaticConfig(&cfg, &manifest, &thresholdReport, &modelCard); err != nil {
 		return Config{}, err
 	}
-	if err := verifyRMPChecksums(dir); err != nil {
+	if manifest.ModelType == modelKindPatchcore && requirePatchCoreProfile {
+		if err := validatePatchCoreTrustedCapacityProfile(&cfg, dir, &manifest, &thresholdReport, &modelCard); err != nil {
+			return Config{}, err
+		}
+	}
+	expectedChecksumFiles := fixtureNames
+	if manifest.ModelType == modelKindPatchcore {
+		expectedChecksumFiles = append(append([]string{}, fixtureNames...), patchCoreExtraFixtureNames...)
+	}
+	if err := verifyRMPChecksums(dir, expectedChecksumFiles); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+type patchCoreTrustedCapacityProfile struct {
+	SchemaVersion           string          `json:"schema_version"`
+	CapacityLevel           int             `json:"capacity_level"`
+	MaxValidated            int             `json:"max_validated"`
+	MaxValidatedModelBytes  int             `json:"max_validated_model_bytes"`
+	ModelFileBytes          int             `json:"model_file_bytes"`
+	RMPSha256               string          `json:"rmp_sha256"`
+	ManifestSha256          string          `json:"manifest_sha256"`
+	ModelSha256             string          `json:"model_sha256"`
+	MemoryBankSha256        string          `json:"memory_bank_sha256"`
+	ONNXOperatorAuditSha256 string          `json:"onnx_operator_audit_sha256"`
+	ExportProfile           string          `json:"export_profile"`
+	RuntimeContract         string          `json:"runtime_contract"`
+	RuntimeConfigHash       string          `json:"runtime_config_hash"`
+	ThresholdVersion        string          `json:"threshold_version"`
+	ThresholdsSha256        string          `json:"thresholds_sha256"`
+	BenchmarkReportSha256   string          `json:"benchmark_report_sha256"`
+	BenchmarkTarget         json.RawMessage `json:"benchmark_target"`
+	MemoryMetric            json.RawMessage `json:"memory_metric"`
+	RuntimeConfig           json.RawMessage `json:"runtime_config"`
+}
+
+const trustedPatchCoreCapacityProfilePath = "evidence/anomaly/pc-m2.5-trusted-capacity-profile.json"
+
+func validatePatchCoreTrustedCapacityProfile(cfg *Config, rmpDir string, manifest *manifestFile, report *thresholdReportFile, card *modelCardFile) error {
+	path := locateTrustedPatchCoreCapacityProfile(rmpDir)
+	profile, err := readStrictJSON[patchCoreTrustedCapacityProfile](path)
+	if err != nil {
+		return fmt.Errorf("%w: PatchCore requires a real frozen PC-M2.5 trusted capacity profile", ErrInvalidContract)
+	}
+	if profile.SchemaVersion != "patchcore-pc-m2.5-trusted-capacity-profile-v1" {
+		return fmt.Errorf("%w: invalid PC-M2.5 trusted capacity profile schema", ErrInvalidContract)
+	}
+	spec := manifest.Params.ModelSpec
+	audit := card.ONNXOperatorAudit
+	if profile.CapacityLevel != spec.MemoryBankLimit.MaxValidated || profile.MaxValidated != spec.MemoryBankLimit.MaxValidated ||
+		profile.MaxValidatedModelBytes != spec.MemoryBankLimit.MaxValidatedModelBytes || profile.ExportProfile != manifest.Params.ExportProfile ||
+		profile.RuntimeContract != manifest.RuntimeContract || profile.ThresholdVersion != manifest.Params.ThresholdVersion {
+		return fmt.Errorf("%w: PC-M2.5 capacity profile does not match the RMP contract", ErrInvalidContract)
+	}
+	modelInfo, err := os.Stat(filepath.Join(rmpDir, "model.onnx"))
+	if err != nil || modelInfo.Size() > int64(profile.MaxValidatedModelBytes) {
+		return fmt.Errorf("%w: PatchCore model size violates PC-M2.5 model bytes limit", ErrInvalidContract)
+	}
+	modelHash, err := fileSHA256(filepath.Join(rmpDir, "model.onnx"))
+	if err != nil || profile.ModelSha256 != modelHash {
+		return fmt.Errorf("%w: PC-M2.5 model artifact identity mismatch", ErrInvalidContract)
+	}
+	manifestHash, err := fileSHA256(filepath.Join(rmpDir, "manifest.json"))
+	if err != nil || profile.ManifestSha256 != manifestHash {
+		return fmt.Errorf("%w: PC-M2.5 manifest identity mismatch", ErrInvalidContract)
+	}
+	thresholdHash, err := fileSHA256(filepath.Join(rmpDir, "reference", "threshold_report.json"))
+	if err != nil || profile.ThresholdsSha256 != thresholdHash {
+		return fmt.Errorf("%w: PC-M2.5 threshold artifact identity mismatch", ErrInvalidContract)
+	}
+	auditHash, err := canonicalRawJSONHash(card.ONNXOperatorAudit)
+	if err != nil || profile.ONNXOperatorAuditSha256 != auditHash {
+		return fmt.Errorf("%w: PC-M2.5 ONNX operator audit identity mismatch", ErrInvalidContract)
+	}
+	if profile.MemoryBankSha256 != spec.MemoryBankHash || profile.MemoryBankSha256 != audit.MemoryBankSHA256 {
+		return fmt.Errorf("%w: PC-M2.5 memory bank identity mismatch", ErrInvalidContract)
+	}
+	rmpHash, err := directorySHA256(rmpDir)
+	if err != nil || profile.RMPSha256 != rmpHash {
+		return fmt.Errorf("%w: PC-M2.5 complete RMP identity mismatch", ErrInvalidContract)
+	}
+	if profile.ModelFileBytes != int(modelInfo.Size()) || !isSHA256(profile.RMPSha256) || !isSHA256(profile.RuntimeConfigHash) ||
+		!isSHA256(profile.BenchmarkReportSha256) || len(profile.BenchmarkTarget) == 0 || len(profile.MemoryMetric) == 0 || len(profile.RuntimeConfig) == 0 {
+		return fmt.Errorf("%w: PC-M2.5 profile lacks complete benchmark/runtime evidence", ErrInvalidContract)
+	}
+	if err := validatePatchCoreRuntimeConfigProfile(cfg, manifest, &profile); err != nil {
+		return err
+	}
+	return nil
+}
+
+func patchCoreRuntimeConfig(cfg *Config, selectedProvider string, fallback bool) map[string]any {
+	provider := "CPUExecutionProvider"
+	if selectedProvider == "cuda" {
+		provider = "CUDAExecutionProvider"
+	} else if selectedProvider == "coreml" {
+		provider = "CoreMLExecutionProvider"
+	}
+	return map[string]any{
+		"batch_mode":                  cfg.RuntimeBatchMode,
+		"cpu_mem_arena":               cfg.EnableCpuMemArena,
+		"execution_provider":          provider,
+		"execution_provider_fallback": fallback,
+		"execution_provider_policy":   cloneStringMap(cfg.ExecutionProviderPolicy),
+		"graph_optimization_level":    "all",
+		"inter_op_num_threads":        1,
+		"intra_op_num_threads":        cfg.NumThreads,
+		"max_runtime_batch":           cfg.RuntimeMaxBatch,
+		"memory_pattern":              true,
+	}
+}
+
+func validatePatchCoreRuntimeConfigProfile(cfg *Config, manifest *manifestFile, profile *patchCoreTrustedCapacityProfile) error {
+	runtimeConfig := map[string]any{}
+	if err := json.Unmarshal(profile.RuntimeConfig, &runtimeConfig); err != nil || len(runtimeConfig) == 0 {
+		return fmt.Errorf("%w: PC-M2.5 profile has an invalid runtime_config object", ErrInvalidContract)
+	}
+	runtimeConfigHash, err := canonicalRawJSONHash(runtimeConfig)
+	if err != nil || profile.RuntimeConfigHash != runtimeConfigHash {
+		return fmt.Errorf("%w: PC-M2.5 runtime_config_hash does not match its runtime_config", ErrInvalidContract)
+	}
+	expectedConfig := patchCoreRuntimeConfig(cfg, "cpu", false)
+	expectedHash, err := canonicalRawJSONHash(expectedConfig)
+	if err != nil {
+		return fmt.Errorf("%w: cannot canonicalize PatchCore runtime configuration: %v", ErrInvalidContract, err)
+	}
+	if manifest.Params.RuntimeConfigHash != expectedHash {
+		return fmt.Errorf("%w: manifest PatchCore runtime_config_hash does not match the validated runtime", ErrInvalidContract)
+	}
+	manifestRuntimeHash, err := canonicalRawJSONHash(manifest.Params.RuntimeConfig)
+	if err != nil || manifest.Params.RuntimeConfigHash != manifestRuntimeHash {
+		return fmt.Errorf("%w: manifest runtime_config does not match runtime_config_hash", ErrInvalidContract)
+	}
+	if profile.RuntimeConfigHash != manifest.Params.RuntimeConfigHash || profile.RuntimeConfigHash != expectedHash {
+		return fmt.Errorf("%w: PC-M2.5 runtime configuration does not match the manifest", ErrInvalidContract)
+	}
+	return nil
+}
+
+func locateTrustedPatchCoreCapacityProfile(rmpDir string) string {
+	if override := os.Getenv("RAVEN_PATCHCORE_CAPACITY_PROFILE"); override != "" {
+		return override
+	}
+	search := rmpDir
+	for {
+		candidate := filepath.Join(search, filepath.FromSlash(trustedPatchCoreCapacityProfilePath))
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+		parent := filepath.Dir(search)
+		if parent == search {
+			return filepath.Join(rmpDir, filepath.FromSlash(trustedPatchCoreCapacityProfilePath))
+		}
+		search = parent
+	}
 }
 
 // readStrictJSON rejects both unknown fields and trailing JSON values.
@@ -137,6 +294,7 @@ type manifestParams struct {
 	OnnxInput             struct {
 		Batch struct {
 			Kind string `json:"kind"`
+			Size int    `json:"size"`
 		} `json:"batch"`
 	} `json:"onnx_input"`
 	OutputAnomalyMap      bool                   `json:"output_anomaly_map"`
@@ -154,6 +312,8 @@ type manifestParams struct {
 	ScoreThresholdRecall  float64                `json:"score_threshold_recall"`
 	ThresholdCalibratedAt string                 `json:"threshold_calibrated_at"`
 	ThresholdVersion      string                 `json:"threshold_version"`
+	RuntimeConfig         map[string]any         `json:"runtime_config,omitempty"`
+	RuntimeConfigHash     string                 `json:"runtime_config_hash,omitempty"`
 }
 
 type calibrationContextFile struct {
@@ -195,11 +355,32 @@ type modelSpecJSON struct {
 	Padding            bool     `json:"padding,omitempty"`
 	TeacherOutChannels int      `json:"teacher_out_channels,omitempty"`
 	Variant            string   `json:"variant,omitempty"`
+	MemoryBankCount    int      `json:"memory_bank_count,omitempty"`
+	MemoryBankHash     string   `json:"memory_bank_hash,omitempty"`
+	MemoryBankLimit    struct {
+		MaxValidated           int `json:"max_validated,omitempty"`
+		MaxValidatedModelBytes int `json:"max_validated_model_bytes,omitempty"`
+	} `json:"memory_bank_limit,omitempty"`
+	CoresetSamplingRatio          float64 `json:"coreset_sampling_ratio,omitempty"`
+	EmbeddingDim                  int     `json:"embedding_dim,omitempty"`
+	MapNumNeighbors               int     `json:"map_num_neighbors,omitempty"`
+	EmbeddingUpsample             string  `json:"embedding_upsample,omitempty"`
+	EmbeddingUpsampleAlignCorners bool    `json:"embedding_upsample_align_corners,omitempty"`
+	AnomalyMapUpsample            string  `json:"anomaly_map_upsample,omitempty"`
+	AnomalyMapSigma               float64 `json:"anomaly_map_sigma,omitempty"`
+	AnomalyMapKernelSize          int     `json:"anomaly_map_kernel_size,omitempty"`
+	AnomalyMapBlurBorderType      string  `json:"anomaly_map_blur_border_type,omitempty"`
+	AnomalyMapBlurNormalize       bool    `json:"anomaly_map_blur_normalize,omitempty"`
+	NNChunkSize                   int     `json:"nn_chunk_size,omitempty"`
 }
 
 type outputContractFile struct {
 	SchemaVersion string `json:"schema_version"`
-	Input         struct {
+	Batch         struct {
+		Kind string `json:"kind"`
+		Size int    `json:"size"`
+	} `json:"batch"`
+	Input struct {
 		Layout string `json:"layout"`
 		Name   string `json:"name"`
 		Shape  []any  `json:"shape"`
@@ -216,8 +397,12 @@ type preprocessContractFile struct {
 	InGraph    bool   `json:"in_graph"`
 	Normalize  string `json:"normalize"`
 	Resize     struct {
-		InputSize []int  `json:"input_size"`
-		Kind      string `json:"kind"`
+		InputSize          []int  `json:"input_size"`
+		Kind               string `json:"kind"`
+		Interpolation      string `json:"interpolation,omitempty"`
+		AlignCorners       bool   `json:"align_corners,omitempty"`
+		Antialias          bool   `json:"antialias,omitempty"`
+		RoundOutputToUint8 bool   `json:"round_output_to_uint8,omitempty"`
 	} `json:"resize"`
 	ScaleToUnitInterval bool   `json:"scale_to_unit_interval"`
 	TensorLayout        string `json:"tensor_layout"`
@@ -255,6 +440,7 @@ type scoreContractFile struct {
 	PixelMapSpace        string `json:"pixel_map_space"`
 	RuntimeNormalization string `json:"runtime_normalization"`
 	Source               string `json:"source"`
+	MapMaxSource         string `json:"map_max_source,omitempty"`
 	PreProcessorInGraph  bool   `json:"pre_processor_in_graph"`
 	PostProcessorInGraph bool   `json:"post_processor_in_graph"`
 	Assertion            struct {
@@ -275,14 +461,29 @@ type thresholdReportFile struct {
 	DataSplitContract dataSplitFile   `json:"data_split_contract"`
 	Metrics           json.RawMessage `json:"metrics"`
 	ModelIdentity     struct {
-		DecisionPolicyVersion string        `json:"decision_policy_version"`
-		ExportHash            string        `json:"export_hash"`
-		ExportProfile         string        `json:"export_profile"`
-		ModelHash             string        `json:"model_hash"`
-		ModelSpec             modelSpecJSON `json:"model_spec"`
-		RegionPolicyVersion   string        `json:"region_policy_version"`
-		ThresholdVersion      string        `json:"threshold_version"`
-		TrainingConfigHash    string        `json:"training_config_hash"`
+		DecisionPolicyVersion string          `json:"decision_policy_version"`
+		ExportHash            string          `json:"export_hash"`
+		ExportProfile         string          `json:"export_profile"`
+		ModelHash             string          `json:"model_hash"`
+		ModelSpec             modelSpecJSON   `json:"model_spec"`
+		RegionPolicyVersion   string          `json:"region_policy_version"`
+		ThresholdVersion      string          `json:"threshold_version"`
+		TrainingConfigHash    string          `json:"training_config_hash"`
+		FitIdentity           json.RawMessage `json:"fit_identity,omitempty"`
+		DataLeakageCheck      json.RawMessage `json:"data_leakage_check,omitempty"`
+		MemoryBankHash        string          `json:"memory_bank_hash,omitempty"`
+		MemoryBankCount       int             `json:"memory_bank_count,omitempty"`
+		MemoryBankLimit       struct {
+			MaxValidated           int `json:"max_validated,omitempty"`
+			MaxValidatedModelBytes int `json:"max_validated_model_bytes,omitempty"`
+		} `json:"memory_bank_limit,omitempty"`
+		CoresetSamplingRatio float64 `json:"coreset_sampling_ratio,omitempty"`
+		MapNumNeighbors      int     `json:"map_num_neighbors,omitempty"`
+		MapMaxSource         string  `json:"map_max_source,omitempty"`
+		ScoreSemantics       string  `json:"score_semantics,omitempty"`
+		AnomalyMapSigma      float64 `json:"anomaly_map_sigma,omitempty"`
+		AnomalyMapKernelSize int     `json:"anomaly_map_kernel_size,omitempty"`
+		NNChunkSize          int     `json:"nn_chunk_size,omitempty"`
 	} `json:"model_identity"`
 	SchemaVersion string `json:"schema_version"`
 	Threshold     struct {
@@ -336,9 +537,10 @@ type modelCardFile struct {
 	ONNX              struct {
 		ExecutionCoverage string `json:"execution_coverage"`
 		Input             struct {
-			DType string `json:"dtype"`
-			Name  string `json:"name"`
-			Shape []any  `json:"shape"`
+			DType  string `json:"dtype"`
+			Layout string `json:"layout"`
+			Name   string `json:"name"`
+			Shape  []any  `json:"shape"`
 		} `json:"input"`
 		Outputs struct {
 			AnomalyMap struct {
@@ -353,9 +555,23 @@ type modelCardFile struct {
 		ProviderSelected []string `json:"provider_selected"`
 	} `json:"onnx"`
 	TrainingConfigHash string `json:"training_config_hash"`
-	SchemaVersion      string `json:"schema_version"`
-	ValidatedVariant   string `json:"validated_variant"`
-	Validation         struct {
+	ONNXOperatorAudit  struct {
+		Opset                 int      `json:"opset"`
+		UnsupportedOps        []string `json:"unsupported_ops"`
+		OperatorList          []string `json:"operator_list"`
+		RuntimeProvider       string   `json:"runtime_provider"`
+		RuntimeLoad           string   `json:"runtime_load"`
+		RuntimeInference      string   `json:"runtime_inference"`
+		MemoryBankInitializer string   `json:"memory_bank_initializer"`
+		MemoryBankCount       int      `json:"memory_bank_count"`
+		MemoryBankDtype       string   `json:"memory_bank_dtype"`
+		MemoryBankShape       []int    `json:"memory_bank_shape"`
+		MemoryBankSHA256      string   `json:"memory_bank_sha256"`
+		ExternalData          bool     `json:"external_data"`
+	} `json:"onnx_operator_audit,omitempty"`
+	SchemaVersion    string `json:"schema_version"`
+	ValidatedVariant string `json:"validated_variant"`
+	Validation       struct {
 		Comparisons json.RawMessage `json:"comparisons"`
 		Status      string          `json:"status"`
 	} `json:"validation"`
@@ -390,6 +606,7 @@ func (m *manifestFile) config(dir string) (Config, error) {
 		},
 		ExecutionProviderFallbackMetric: m.Params.RuntimeProfile.ExecutionProviderFallbackMetric,
 		ExecutionProviderPolicy:         cloneStringMap(m.Params.RuntimeProfile.ExecutionProviderPolicy),
+		RuntimeConfigHash:               m.Params.RuntimeConfigHash,
 		ExportProfile:                   m.Params.ExportProfile,
 		DeploymentProfile:               m.Params.DeploymentProfile,
 		RegionDecisionMode:              m.Params.RegionPolicy.DecisionMode,
@@ -454,6 +671,13 @@ func (m *manifestFile) config(dir string) (Config, error) {
 		return Config{}, fmt.Errorf("%w: cannot canonicalize model_spec: %v", ErrInvalidContract, err)
 	}
 	cfg.ModelSpec = string(spec)
+	if m.ModelType == modelKindPatchcore {
+		threads, ok := m.Params.RuntimeConfig["intra_op_num_threads"].(float64)
+		if !ok || threads < 1 || threads != float64(int(threads)) {
+			return Config{}, fmt.Errorf("%w: PatchCore runtime intra_op_num_threads must be a positive integer", ErrInvalidContract)
+		}
+		cfg.NumThreads = int(threads)
+	}
 	return cfg, nil
 }
 
@@ -488,7 +712,7 @@ func validateStaticConfig(cfg *Config, manifest *manifestFile, report *threshold
 	if manifest.RuntimeContract != RuntimeContract {
 		return contractError("runtime_contract", manifest.RuntimeContract, RuntimeContract)
 	}
-	if manifest.ModelType != modelKindEfficientAD && manifest.ModelType != modelKindPadim {
+	if manifest.ModelType != modelKindEfficientAD && manifest.ModelType != modelKindPadim && manifest.ModelType != modelKindPatchcore {
 		return fmt.Errorf("%w: unsupported model_type %q", ErrInvalidContract, manifest.ModelType)
 	}
 	if manifest.Labels != "labels.txt" {
@@ -530,7 +754,7 @@ func validateStaticConfig(cfg *Config, manifest *manifestFile, report *threshold
 	if err := validateProfileAndVariant(cfg, card); err != nil {
 		return err
 	}
-	if err := validateScoreAndThreshold(cfg, manifest, report); err != nil {
+	if err := validateScoreAndThreshold(cfg, manifest, report, card); err != nil {
 		return err
 	}
 	if err := validateRegionPolicy(cfg, manifest, report); err != nil {
@@ -586,13 +810,72 @@ func validateModelSpecAgainstReport(manifest *manifestFile, report *thresholdRep
 	return nil
 }
 
+func validatePatchCoreModelSpec(manifest *manifestFile, report *thresholdReportFile, card *modelCardFile) error {
+	if manifest.ModelType != modelKindPatchcore {
+		return nil
+	}
+	spec := manifest.Params.ModelSpec
+	backbone := spec.Backbone
+	expectedVariant := "r18"
+	expectedDim := 384
+	if backbone != "resnet18" && backbone != "wide_resnet50_2" {
+		return fmt.Errorf("%w: unsupported PatchCore backbone %q", ErrInvalidContract, backbone)
+	}
+	if backbone == "wide_resnet50_2" {
+		expectedVariant, expectedDim = "wr50", 1536
+	}
+	if spec.Variant != expectedVariant || spec.EmbeddingDim != expectedDim {
+		return fmt.Errorf("%w: PatchCore variant/embedding_dim mismatch", ErrInvalidContract)
+	}
+	if len(spec.Layers) != 2 || spec.Layers[0] != "layer2" || spec.Layers[1] != "layer3" {
+		return fmt.Errorf("%w: PatchCore layers must be layer2 and layer3", ErrInvalidContract)
+	}
+	if spec.MemoryBankCount <= 0 || spec.MemoryBankCount > spec.MemoryBankLimit.MaxValidated || spec.MemoryBankLimit.MaxValidatedModelBytes <= 0 {
+		return fmt.Errorf("%w: invalid PatchCore memory bank capacity contract", ErrInvalidContract)
+	}
+	if !isSHA256(spec.MemoryBankHash) {
+		return fmt.Errorf("%w: invalid PatchCore memory bank hash", ErrInvalidContract)
+	}
+	if spec.CoresetSamplingRatio <= 0 || spec.CoresetSamplingRatio > 1 || spec.MapNumNeighbors != 1 || spec.NNChunkSize <= 0 {
+		return fmt.Errorf("%w: invalid PatchCore nearest-neighbor/coreset contract", ErrInvalidContract)
+	}
+	if spec.EmbeddingUpsample != "bilinear" || spec.EmbeddingUpsampleAlignCorners || spec.AnomalyMapUpsample != "nearest" || spec.AnomalyMapSigma != 4 || spec.AnomalyMapKernelSize != 33 || spec.AnomalyMapBlurBorderType != "reflect" || !spec.AnomalyMapBlurNormalize {
+		return fmt.Errorf("%w: PatchCore embedding/map postprocess contract mismatch", ErrInvalidContract)
+	}
+	identity := report.ModelIdentity
+	if identity.MemoryBankHash != spec.MemoryBankHash || identity.MemoryBankCount != spec.MemoryBankCount || identity.MemoryBankLimit != spec.MemoryBankLimit {
+		return fmt.Errorf("%w: PatchCore threshold report memory bank identity mismatch", ErrInvalidContract)
+	}
+	if identity.CoresetSamplingRatio != spec.CoresetSamplingRatio || identity.MapNumNeighbors != 1 || identity.MapMaxSource != "final_model_anomaly_map" || identity.ScoreSemantics != "map_max" {
+		return fmt.Errorf("%w: PatchCore threshold report score semantics mismatch", ErrInvalidContract)
+	}
+	if identity.AnomalyMapSigma != spec.AnomalyMapSigma || identity.AnomalyMapKernelSize != spec.AnomalyMapKernelSize || identity.NNChunkSize != spec.NNChunkSize {
+		return fmt.Errorf("%w: PatchCore threshold report map/NN parameters mismatch", ErrInvalidContract)
+	}
+	if card.ONNXOperatorAudit.ExternalData || card.ONNXOperatorAudit.MemoryBankSHA256 != spec.MemoryBankHash || card.ONNXOperatorAudit.MemoryBankCount != spec.MemoryBankCount {
+		return fmt.Errorf("%w: PatchCore ONNX memory bank audit mismatch", ErrInvalidContract)
+	}
+	if len(card.ONNXOperatorAudit.UnsupportedOps) != 0 || card.ONNXOperatorAudit.RuntimeLoad != "PASS" || card.ONNXOperatorAudit.RuntimeInference != "PASS" {
+		return fmt.Errorf("%w: PatchCore ONNX operator audit is not PASS", ErrInvalidContract)
+	}
+	return nil
+}
+
 func validateProfileAndVariant(cfg *Config, card *modelCardFile) error {
 	switch cfg.DeploymentProfile {
 	case deploymentProduction:
-		if cfg.ExportProfile != ExportProfile {
-			return fmt.Errorf("%w: production export_profile must be %q", ErrInvalidContract, ExportProfile)
+		expectedProfile := ExportProfile
+		if cfg.ModelKind == modelKindPatchcore {
+			expectedProfile = PatchCoreExportProfile
 		}
-		if card.ValidatedVariant != ValidatedEfficientAdSmall && card.ValidatedVariant != ValidatedPadimR18 {
+		if cfg.ExportProfile != expectedProfile {
+			return fmt.Errorf("%w: production export_profile must be %q", ErrInvalidContract, expectedProfile)
+		}
+		validated := card.ValidatedVariant == ValidatedEfficientAdSmall || card.ValidatedVariant == ValidatedPadimR18
+		if cfg.ModelKind == modelKindPatchcore {
+			validated = card.ValidatedVariant == ValidatedPatchcoreR18
+		}
+		if !validated {
 			return fmt.Errorf("%w: production model uses unvalidated variant %q", ErrInvalidContract, card.ValidatedVariant)
 		}
 		if card.Validation.Status != "PASS" {
@@ -610,7 +893,7 @@ func validateProfileAndVariant(cfg *Config, card *modelCardFile) error {
 	return nil
 }
 
-func validateScoreAndThreshold(cfg *Config, manifest *manifestFile, report *thresholdReportFile) error {
+func validateScoreAndThreshold(cfg *Config, manifest *manifestFile, report *thresholdReportFile, card *modelCardFile) error {
 	if cfg.ScoreSemantics != ScoreSemanticsMapMax {
 		return fmt.Errorf("%w: anomaly-v1 requires score semantics map_max", ErrInvalidContract)
 	}
@@ -626,6 +909,9 @@ func validateScoreAndThreshold(cfg *Config, manifest *manifestFile, report *thre
 	if manifest.Params.ScoreContract.RuntimeNormalization != "none" || manifest.Params.ScoreContract.PreProcessorInGraph || manifest.Params.ScoreContract.PostProcessorInGraph {
 		return fmt.Errorf("%w: anomaly-v1 forbids in-graph preprocessing/postprocessing or runtime normalization", ErrInvalidContract)
 	}
+	if cfg.ModelKind == modelKindPatchcore && manifest.Params.ScoreContract.Source != "PatchCoreMapMaxExportWrapper" {
+		return fmt.Errorf("%w: PatchCore score source must be PatchCoreMapMaxExportWrapper", ErrInvalidContract)
+	}
 	if manifest.Params.InputNormalize != manifest.Params.PreprocessContract.Normalize || manifest.Params.PreprocessContract.InGraph {
 		return fmt.Errorf("%w: manifest and preprocess normalization contracts differ", ErrInvalidContract)
 	}
@@ -637,6 +923,15 @@ func validateScoreAndThreshold(cfg *Config, manifest *manifestFile, report *thre
 	}
 	if !manifest.Params.PreprocessContract.ScaleToUnitInterval || manifest.Params.PreprocessContract.ColorSpace != "RGB" || manifest.Params.PreprocessContract.TensorLayout != "NCHW" {
 		return fmt.Errorf("%w: invalid RGB/NCHW unit-interval preprocess contract", ErrInvalidContract)
+	}
+	if cfg.ModelKind == modelKindPatchcore {
+		resize := manifest.Params.PreprocessContract.Resize
+		if resize.Interpolation != "bilinear" || resize.AlignCorners || resize.Antialias || !resize.RoundOutputToUint8 {
+			return fmt.Errorf("%w: PatchCore requires torchvision-compatible bilinear resize with antialias=false and uint8 rounding", ErrInvalidContract)
+		}
+	}
+	if err := validatePatchCoreModelSpec(manifest, report, card); err != nil {
+		return err
 	}
 
 	if err := finiteFloat64("score_threshold", manifest.Params.ScoreThreshold); err != nil {
@@ -720,8 +1015,15 @@ func validateRuntimeProfile(cfg *Config, manifest *manifestFile) error {
 	if cfg.RuntimeBatchMode != "single" || cfg.RuntimeMaxBatch != 1 || manifest.Params.RuntimeProfile.MaxRuntimeBatch != 1 {
 		return fmt.Errorf("%w: anomaly-v1 requires runtime batch mode single and max_runtime_batch 1", ErrInvalidContract)
 	}
-	if manifest.Params.OnnxInput.Batch.Kind != "dynamic" {
+	expectedBatchKind := "dynamic"
+	if manifest.ModelType == modelKindPatchcore {
+		expectedBatchKind = "static"
+	}
+	if manifest.Params.OnnxInput.Batch.Kind != expectedBatchKind {
 		return fmt.Errorf("%w: ONNX dynamic batch declaration is required for anomaly-export-v1", ErrInvalidContract)
+	}
+	if expectedBatchKind == "static" && manifest.Params.OnnxInput.Batch.Size != 1 {
+		return fmt.Errorf("%w: PatchCore ONNX batch must be static size 1", ErrInvalidContract)
 	}
 	limits := manifest.Params.RuntimeProfile.InputLimits
 	if limits.MinSide < 1 || limits.MaxSide < limits.MinSide || limits.MaxPixels < 1 || limits.MaxBatch < 1 {
@@ -874,20 +1176,27 @@ func validateONNXCard(manifest *manifestFile, card *modelCardFile) error {
 		return fmt.Errorf("%w: output contract must explicitly forbid pred_label and pred_mask", ErrInvalidContract)
 	}
 
-	cardInputShape := []any{"B", float64(3), float64(manifest.InputSize[0]), float64(manifest.InputSize[1])}
+	batchShape := any("B")
+	if manifest.ModelType == modelKindPatchcore {
+		batchShape = float64(1)
+	}
+	cardInputShape := []any{batchShape, float64(3), float64(manifest.InputSize[0]), float64(manifest.InputSize[1])}
 	if !shapeEqual(card.ONNX.Input.Shape, cardInputShape) {
 		return fmt.Errorf("%w: model card ONNX input shape differs from manifest", ErrInvalidContract)
 	}
 	if !shapeEqual(contract.Input.Shape, cardInputShape) {
 		return fmt.Errorf("%w: output contract input shape differs from manifest", ErrInvalidContract)
 	}
-	cardMapShape := []any{"B", float64(1), float64(manifest.InputSize[0]), float64(manifest.InputSize[1])}
+	cardMapShape := []any{batchShape, float64(1), float64(manifest.InputSize[0]), float64(manifest.InputSize[1])}
 	if !shapeEqual(card.ONNX.Outputs.AnomalyMap.Shape, cardMapShape) {
 		return fmt.Errorf("%w: model card anomaly_map shape differs from manifest", ErrInvalidContract)
 	}
-	cardScoreShape := []any{"B"}
+	cardScoreShape := []any{batchShape}
 	if !shapeEqual(card.ONNX.Outputs.PredScore.Shape, cardScoreShape) {
 		return fmt.Errorf("%w: model card pred_score shape differs from manifest", ErrInvalidContract)
+	}
+	if manifest.ModelType == modelKindPatchcore && card.ONNX.Input.Layout != "NCHW" {
+		return fmt.Errorf("%w: PatchCore model card must declare NCHW input", ErrInvalidContract)
 	}
 	if card.ONNX.Input.DType != "float32" || card.ONNX.Outputs.AnomalyMap.DType != "float32" || card.ONNX.Outputs.PredScore.DType != "float32" {
 		return fmt.Errorf("%w: anomaly-v1 requires float32 ONNX tensors", ErrInvalidContract)
@@ -923,7 +1232,7 @@ func shapeEqual(actual, expected []any) bool {
 	return true
 }
 
-func verifyRMPChecksums(dir string) error {
+func verifyRMPChecksums(dir string, expectedNames []string) error {
 	data, err := os.ReadFile(filepath.Join(dir, "checksums.txt"))
 	if err != nil {
 		return fmt.Errorf("%w: cannot read checksums: %v", ErrInvalidChecksum, err)
@@ -956,7 +1265,7 @@ func verifyRMPChecksums(dir string) error {
 	}
 
 	expectedFiles := map[string]bool{}
-	for _, name := range fixtureNames {
+	for _, name := range expectedNames {
 		if name != "checksums.txt" {
 			expectedFiles[filepath.FromSlash(name)] = true
 		}
@@ -993,6 +1302,53 @@ func isSHA256(value string) bool {
 	}
 	_, err := hex.DecodeString(digest)
 	return err == nil
+}
+
+func fileSHA256(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
+func canonicalRawJSONHash(value any) (string, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
+func directorySHA256(directory string) (string, error) {
+	digest := sha256.New()
+	err := filepath.WalkDir(directory, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		relative, err := filepath.Rel(directory, path)
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		digest.Write([]byte(filepath.ToSlash(relative)))
+		digest.Write([]byte{0})
+		digest.Write(data)
+		digest.Write([]byte{0})
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return "sha256:" + hex.EncodeToString(digest.Sum(nil)), nil
 }
 
 func floatsClose(left, right float64) bool {

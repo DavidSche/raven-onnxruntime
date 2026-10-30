@@ -438,6 +438,9 @@ type ortApi struct {
 	SessionOptionsSetWeightlessSourceModelBuffer uintptr // 424 (since v1.29, ORT_API2_STATUS)
 	// --- Functions added in ORT 1.30 (ORT_API_VERSION 30), appended to the OrtApi struct ---
 	KernelContext_GetPreallocatedOutput uintptr // 425 (since v1.30, ORT_API2_STATUS)
+	// --- Functions added in ORT 1.31 (ORT_API_VERSION 31), appended to the OrtApi struct ---
+	SessionOptionsSetEpContextDataReadFunc uintptr // 426 (since v1.31, ORT_API2_STATUS)
+	GetModelPackageApi                     uintptr // 427 (since v1.31, returns const OrtModelPackageApi*)
 }
 
 // OrtStatus is an opaque pointer to an ONNX Runtime status object.
@@ -597,4 +600,10 @@ type apiFuncs struct {
 	// ORT 1.30+ APIs (registered conditionally when apiVersion >= 30)
 	// GetPreallocatedOutput 返回借用的预分配输出 OrtValue（仅 kernel Compute 内有效）。
 	getPreallocatedOutput func(unsafe.Pointer, uintptr, *ValueHandle) StatusHandle // 425 (OrtKernelContext*)
+
+	// ORT 1.31+ APIs (registered conditionally when apiVersion >= 31)
+	// SetEpContextDataReadFunc 注册外部 EPContext 二进制数据的读取回调（NULL 清除）。
+	setEpContextDataReadFunc func(SessionOptionsHandle, uintptr, unsafe.Pointer) StatusHandle // 426 (read_func 为 OrtReadNamedBufferFunc 函数指针)
+	// GetModelPackageApi 返回 ORT 持有的 OrtModelPackageApi 表指针（无需释放）。
+	getModelPackageApi func() unsafe.Pointer // 427
 }

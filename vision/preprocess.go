@@ -90,7 +90,7 @@ func fillCHWFromPixels(data []float32, pix []byte, stride, channels, planeSize, 
 
 // ResizeTorchBilinear resizes img to width×height using PyTorch's bilinear
 // sampling with align_corners=False — the exact algorithm behind
-// ``torchvision.transforms.functional.resize(antialias=False)`` that
+// “torchvision.transforms.functional.resize(antialias=False)“ that
 // rf-detr's predict() pipeline uses. Plain bilinear kernels (PIL,
 // x/image/draw.BiLinear) map output pixels to source coordinates with a
 // different convention, which after a large downscale can shift normalized

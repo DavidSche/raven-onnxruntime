@@ -150,9 +150,7 @@ func CalcLetterBox(origW, origH, targetSize int, stride int, align LetterBoxAlig
 
 	// stride 参数仅保留 API 兼容（调用方传入 DefaultStride）；内容尺寸已不做 stride 对齐
 	//（见下方注释），该参数当前不使用。
-	if stride <= 0 {
-		stride = 32
-	}
+	_ = stride
 
 	// 内容尺寸比例在 float64 下计算（与 ultralytics letterbox 的
 	// r = min(t/h, t/w) 逐位一致），避免 float32 量化误差把乘积翻过 .5 边界。

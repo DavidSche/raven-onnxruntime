@@ -115,7 +115,7 @@ func TestFillCHWFromImageNormalized(t *testing.T) {
 }
 
 // TestResizeTorchBilinear_Golden 钉住 ResizeTorchBilinear 与 torchvision
-// ``F.resize(antialias=False)``（即 ATen upsample_bilinear2d, align_corners=False）
+// “F.resize(antialias=False)“（即 ATen upsample_bilinear2d, align_corners=False）
 // 的逐像素一致性。
 //
 // 背景：普通双线性（PIL / draw.BiLinear）的源坐标约定与 torchvision 不同，
@@ -123,7 +123,7 @@ func TestFillCHWFromImageNormalized(t *testing.T) {
 // 跨过阈值。rf-detr predict 用 torchvision 管线，故引擎必须复刻其内核。
 //
 // 期望值：5×4 确定性图 → 3×2，由 Python torch 2.12 + torchvision 0.27
-// ``F.resize(antialias=False)`` 计算后 round(*255) 得到（与 Go 端 uint8 舍入一致）。
+// “F.resize(antialias=False)“ 计算后 round(*255) 得到（与 Go 端 uint8 舍入一致）。
 func TestResizeTorchBilinear_Golden(t *testing.T) {
 	// 5x4 确定性 RGB 图：R=(x*50+y*30)%256, G=(x*80+y*40)%256, B=(x*20+y*60)%256
 	const W, H = 5, 4

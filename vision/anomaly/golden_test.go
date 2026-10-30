@@ -6,6 +6,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
 	"io"
 	"math"
 	"os"
@@ -35,6 +37,7 @@ type goldenFixture struct {
 	Score      []float32
 	Map        []float32
 	MapShape   []int
+	Argmax     []int64
 	Labels     []uint8
 	Seed       int64
 }
@@ -193,7 +196,7 @@ func readGoldenNPZ(t *testing.T, path string) goldenFixture {
 	if err != nil {
 		t.Fatalf("read golden map: %v", err)
 	}
-	return goldenFixture{
+	fixture := goldenFixture{
 		SchemaVersion:     schemaVersion,
 		ModelArtifactHash: artifactHash,
 		Opset:             opset,
@@ -205,6 +208,17 @@ func readGoldenNPZ(t *testing.T, path string) goldenFixture {
 		Map:               mapValues,
 		MapShape:          mapShape,
 	}
+	if file, exists := values["argmax_flat_row_major_first_max"]; exists {
+		argmax, argmaxShape, err := readInt64VectorNpzEntry(file)
+		if err != nil {
+			t.Fatalf("read golden argmax: %v", err)
+		}
+		if len(argmaxShape) != 1 || argmaxShape[0] != inputShape[0] {
+			t.Fatalf("golden argmax shape = %v, want [%d]", argmaxShape, inputShape[0])
+		}
+		fixture.Argmax = argmax
+	}
+	return fixture
 }
 
 func readFloat32NpzEntry(file *zip.File) ([]float32, []int, error) {
@@ -408,7 +422,7 @@ func runGoldenPrediction(engine *Engine, input []float32, width, height int) (*A
 }
 
 func TestAnomalyGoldenNumericalFixture(t *testing.T) {
-	for _, variant := range []string{"efficientad-s", "padim-r18"} {
+	for _, variant := range []string{"efficientad-s", "padim-r18", "patchcore-r18-pcm25-v3"} {
 		t.Run(variant, func(t *testing.T) {
 			cfg := gatedFixtureConfig(t, variant)
 			// Keep map output enabled so the Go postprocess result can be compared
@@ -430,6 +444,9 @@ func TestAnomalyGoldenNumericalFixture(t *testing.T) {
 			}
 			if fixture.SchemaVersion != goldenFixtureSchemaVersion {
 				t.Fatalf("golden schema_version = %q, want %q", fixture.SchemaVersion, goldenFixtureSchemaVersion)
+			}
+			if cfg.ModelKind == modelKindPatchcore && len(fixture.Argmax) == 0 {
+				t.Fatal("PatchCore golden fixture requires argmax_flat_row_major_first_max")
 			}
 			if fixture.Opset != goldenFixtureOpset {
 				t.Fatalf("golden opset = %d, want %d", fixture.Opset, goldenFixtureOpset)
@@ -506,6 +523,17 @@ func TestAnomalyGoldenNumericalFixture(t *testing.T) {
 				if p99Error > combinedTolerance(float64(expectedMap[maxFloat32Index(expectedMap)])) {
 					t.Fatalf("golden map[%d] P99 error %v exceeds maximum-point combined tolerance", batchIndex, p99Error)
 				}
+				if len(fixture.Argmax) != 0 {
+					expectedArgmax := fixture.Argmax[batchIndex]
+					actualArgmax := maxFloat32Index(result.AnomalyMap)
+					if int64(actualArgmax) != expectedArgmax {
+						t.Fatalf("golden argmax[%d] = %d, expected %d", batchIndex, actualArgmax, expectedArgmax)
+					}
+					mapWidth := cfg.InputSize.X
+					argmaxY := expectedArgmax / int64(mapWidth)
+					argmaxX := expectedArgmax % int64(mapWidth)
+					t.Logf("golden[%d]: argmax_y=%d argmax_x=%d argmax_flat_index=%d", batchIndex, argmaxY, argmaxX, expectedArgmax)
+				}
 				maxError, mae, rmse := floatMetric(result.AnomalyMap, expectedMap)
 				t.Logf("golden[%d]: score_error=%g map_max_error=%g map_mae=%g map_rmse=%g cosine=%g p99_error=%g", batchIndex, math.Abs(float64(result.Score-expectedScore)), maxError, mae, rmse, cosine, p99Error)
 			}
@@ -531,6 +559,131 @@ func maxFloat32Index(values []float32) int {
 		}
 	}
 	return index
+}
+
+func equalFloat32(left, right []float32) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+type preprocessGoldenFixture struct {
+	SchemaVersion     string
+	Family            string
+	InputSize         []int64
+	GenerationSeed    int64
+	SourceRGB         []uint8
+	SourceShape       []int
+	PreprocessedInput []float32
+	PreprocessedShape []int
+}
+
+func readPreprocessGoldenNPZ(t *testing.T, path string) preprocessGoldenFixture {
+	t.Helper()
+	archive, err := zip.OpenReader(path)
+	if err != nil {
+		t.Fatalf("open preprocess golden fixture: %v", err)
+	}
+	defer archive.Close()
+
+	entries := make(map[string]*zip.File, len(archive.File))
+	for _, file := range archive.File {
+		entries[strings.TrimSuffix(file.Name, ".npy")] = file
+	}
+	for _, name := range []string{"schema_version", "family", "input_size", "generation_seed", "source_rgb", "preprocessed_input"} {
+		if _, exists := entries[name]; !exists {
+			t.Fatalf("preprocess golden fixture missing %q", name)
+		}
+	}
+
+	schemaVersion, err := readStringNpzEntry(entries["schema_version"])
+	if err != nil {
+		t.Fatalf("read preprocess golden schema_version: %v", err)
+	}
+	family, err := readStringNpzEntry(entries["family"])
+	if err != nil {
+		t.Fatalf("read preprocess golden family: %v", err)
+	}
+	inputSize, _, err := readInt64VectorNpzEntry(entries["input_size"])
+	if err != nil {
+		t.Fatalf("read preprocess golden input_size: %v", err)
+	}
+	generationSeed, err := readInt64NpzEntry(entries["generation_seed"])
+	if err != nil {
+		t.Fatalf("read preprocess golden generation_seed: %v", err)
+	}
+	sourceRGB, sourceShape, err := readUint8NpzEntry(entries["source_rgb"])
+	if err != nil {
+		t.Fatalf("read preprocess golden source_rgb: %v", err)
+	}
+	preprocessedInput, preprocessedShape, err := readFloat32NpzEntry(entries["preprocessed_input"])
+	if err != nil {
+		t.Fatalf("read preprocess golden preprocessed_input: %v", err)
+	}
+	return preprocessGoldenFixture{
+		SchemaVersion:     schemaVersion,
+		Family:            family,
+		InputSize:         inputSize,
+		GenerationSeed:    generationSeed,
+		SourceRGB:         sourceRGB,
+		SourceShape:       sourceShape,
+		PreprocessedInput: preprocessedInput,
+		PreprocessedShape: preprocessedShape,
+	}
+}
+
+func TestPatchCorePreprocessGoldenFixture(t *testing.T) {
+	cfg := loadFixtureConfig(t, "patchcore-r18-pcm25-v3")
+	fixture := readPreprocessGoldenNPZ(t, filepath.Join(filepath.Dir(cfg.ModelPath), "reference", "preprocess_golden.npz"))
+	if fixture.SchemaVersion != "patchcore-preprocess-golden-v1" {
+		t.Fatalf("schema_version = %q, want patchcore-preprocess-golden-v1", fixture.SchemaVersion)
+	}
+	if fixture.Family != modelKindPatchcore {
+		t.Fatalf("family = %q, want %q", fixture.Family, modelKindPatchcore)
+	}
+	if fixture.GenerationSeed <= 0 {
+		t.Fatalf("generation_seed = %d, want positive", fixture.GenerationSeed)
+	}
+	if len(fixture.InputSize) != 2 || int(fixture.InputSize[0]) != cfg.InputSize.X || int(fixture.InputSize[1]) != cfg.InputSize.Y {
+		t.Fatalf("input_size = %v, want %v", fixture.InputSize, cfg.InputSize)
+	}
+	if len(fixture.SourceShape) != 3 || fixture.SourceShape[0] != cfg.InputSize.Y || fixture.SourceShape[1] != cfg.InputSize.X || fixture.SourceShape[2] != 3 {
+		t.Fatalf("source_rgb shape = %v, want [H,W,3]", fixture.SourceShape)
+	}
+	if len(fixture.PreprocessedShape) != 4 || fixture.PreprocessedShape[0] != 1 || fixture.PreprocessedShape[1] != 3 || fixture.PreprocessedShape[2] != cfg.InputSize.Y || fixture.PreprocessedShape[3] != cfg.InputSize.X {
+		t.Fatalf("preprocessed_input shape = %v, want [1,3,H,W]", fixture.PreprocessedShape)
+	}
+
+	source := image.NewRGBA(image.Rect(0, 0, cfg.InputSize.X, cfg.InputSize.Y))
+	for y := 0; y < cfg.InputSize.Y; y++ {
+		for x := 0; x < cfg.InputSize.X; x++ {
+			sourceOffset := (y*cfg.InputSize.X + x) * 3
+			source.SetRGBA(x, y, color.RGBA{
+				R: fixture.SourceRGB[sourceOffset],
+				G: fixture.SourceRGB[sourceOffset+1],
+				B: fixture.SourceRGB[sourceOffset+2],
+				A: 255,
+			})
+		}
+	}
+	actual, _, err := buildPreprocessTensorData(source, cfg)
+	if err != nil {
+		t.Fatalf("buildPreprocessTensorData() error = %v", err)
+	}
+	if len(actual) != len(fixture.PreprocessedInput) {
+		t.Fatalf("preprocessed tensor length = %d, want %d", len(actual), len(fixture.PreprocessedInput))
+	}
+	for index, expected := range fixture.PreprocessedInput {
+		if actual[index] != expected {
+			t.Fatalf("preprocessed tensor[%d] = %v, expected %v", index, actual[index], expected)
+		}
+	}
 }
 
 func sortFloat64(values []float64) {

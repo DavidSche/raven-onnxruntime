@@ -353,29 +353,31 @@ import "github.com/DavidSche/raven-onnxruntime/ort/ortlog"
 ortlog.SetLogger(myZapLogger) // Implement the ortlog.Logger interface
 ```
 
-## ONNX Runtime 1.29 / 1.30 New APIs
+## ONNX Runtime 1.29 / 1.30 / 1.31 New APIs
 
-Bindings are aligned with ONNX Runtime 1.30.0 (ORT_API_VERSION 30). Default API version is now **30** (was 28); two new C API entries are bound:
+Bindings are aligned with ONNX Runtime 1.31.1 (ORT_API_VERSION 31). Default API version is now **31** (was 28); four new C API entries are bound:
 
 | ORT version | C API (OrtApi index) | Go binding |
 |-------------|----------------------|------------|
 | 1.29 | `SessionOptionsSetWeightlessSourceModelBuffer` (#424) | `SessionOptions.SetWeightlessSourceModelBuffer` |
 | 1.30 | `KernelContext_GetPreallocatedOutput` (#425) | low-level `ortApi.KernelContext_GetPreallocatedOutput` |
+| 1.31 | `SessionOptionsSetEpContextDataReadFunc` (#426) | low-level `ortApi.SessionOptionsSetEpContextDataReadFunc` |
+| 1.31 | `GetModelPackageApi` (#427) | low-level `ortApi.GetModelPackageApi` |
 
 ### Version negotiation (auto-downgrade)
 
 The engine keeps working with older runtimes: if the requested (or default) version is unavailable, it automatically downgrades to the highest version the loaded library supports with a warning.
 
 ```go
-engine, err := ort.NewEngine(libPath, ort.WithApiVersion(ort.ApiVersion30))
+engine, err := ort.NewEngine(libPath, ort.WithApiVersion(ort.ApiVersion31))
 if err != nil {
     log.Fatal(err)
 }
 defer engine.Destroy()
 
-// Actual negotiated version (30 on 1.30+, lower on older libraries)
+// Actual negotiated version (31 on 1.31+, lower on older libraries)
 apiver := engine.GetApiVersion()
-ortVersion := engine.GetVersion() // e.g. "1.30.0"
+ortVersion := engine.GetVersion() // e.g. "1.31.1"
 ```
 
 ### 1.29: Weightless EPContext source model from memory
@@ -411,6 +413,15 @@ Notes:
 ### 1.30: Preallocated output for custom kernels
 
 `KernelContext_GetPreallocatedOutput` (OrtApi #425) lets custom Op kernel implementations borrow a caller-preallocated output `OrtValue` inside `Compute`, avoiding an output copy. It is bound at the `ortApi` struct level (`KernelContext_GetPreallocatedOutput`, registered when API version ≥ 30) for kernel authors working through the raw API function table; the high-level vision/session APIs in this repo do not use it directly. A nil-valued field means the loaded runtime predates 1.30.
+
+### 1.31: External EPContext data callbacks and model package API
+
+Two entries are appended in ORT 1.31 and registered when API version ≥ 31 (nil-valued fields mean the loaded runtime predates 1.31):
+
+- `SessionOptionsSetEpContextDataReadFunc` (#426) — registers an application-managed callback for reading external EPContext binary data during session initialization. Passing NULL clears a previously registered callback. Execution providers that advertise READ support (`OrtEpContextDataCallbackSupportFlags_READ`) pick it up from their `OrtEpContextConfig`; session creation fails upfront if an external EPContext node is assigned to an EP without READ support.
+- `GetModelPackageApi` (#427) — returns the stable `OrtModelPackageApi` table (model package options/context inspection, component and variant selection, and `CreateSession` for a selected variant). The table is owned by ONNX Runtime and must not be released.
+
+Both are bound at the `ortApi` struct level only, following the 1.30 precedent: the high-level vision/session APIs in this repo do not use model packages yet.
 
 ## Dependencies
 

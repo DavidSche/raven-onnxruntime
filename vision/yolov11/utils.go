@@ -7,9 +7,10 @@ import (
 	"math"
 	"sort"
 
+	"github.com/up-zero/gotool/imageutil"
+
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
 	"github.com/DavidSche/raven-onnxruntime/vision"
-	"github.com/up-zero/gotool/imageutil"
 )
 
 func preprocess(img image.Image, inputSize int, session *ort.Session, ppCfg vision.PreprocessConfig) (*ort.Value, imageParams, error) {

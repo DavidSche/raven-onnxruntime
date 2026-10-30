@@ -7,11 +7,12 @@ import (
 	"math"
 	"sort"
 
+	"github.com/up-zero/gotool/convertutil"
+
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
 	"github.com/DavidSche/raven-onnxruntime/ort/ortlog"
 	"github.com/DavidSche/raven-onnxruntime/vision"
 	"github.com/DavidSche/raven-onnxruntime/vision/tokenizer"
-	"github.com/up-zero/gotool/convertutil"
 )
 
 // SegEngine Grounded-SAM-2 分割引擎

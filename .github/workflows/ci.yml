@@ -33,12 +33,16 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # 基线已清零（vision/ 全部告警已修复），因此这里对 PR 与 push 一视同仁：
+      # 任何一条告警都会让 CI 失败，防止回潮。
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
-          # Only show new issues on PRs; show all issues on push/merge.
-          only-new-issues: ${{ github.event_name == 'pull_request' }}
+          # 固定版本：.golangci.yml 是 v1 配置格式，跟随 latest 会在 v2 发布时
+          # 因配置 schema 不兼容而让 lint 直接失败；升级时请同步迁移配置。
+          version: v1.64.8
+          # .golangci.yml 位于仓库根目录，action 会自动加载；这里只显式给超时。
+          args: --timeout=5m
 
   # ------------------------------------------------------------------
   # Build  —  cross-platform compilation check

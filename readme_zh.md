@@ -351,29 +351,31 @@ import "github.com/DavidSche/raven-onnxruntime/ort/ortlog"
 ortlog.SetLogger(myZapLogger) // 实现 ortlog.Logger 接口
 ```
 
-## ONNX Runtime 1.29 / 1.30 新增 API
+## ONNX Runtime 1.29 / 1.30 / 1.31 新增 API
 
-绑定已对齐 ONNX Runtime 1.30.0（ORT_API_VERSION 30）。默认 API 版本现为 **30**（原 28）；新增两个 C API 绑定：
+绑定已对齐 ONNX Runtime 1.31.1（ORT_API_VERSION 31）。默认 API 版本现为 **31**（原 28）；新增四个 C API 绑定：
 
 | ORT 版本 | C API（OrtApi 索引） | Go 绑定 |
 |----------|---------------------|---------|
 | 1.29 | `SessionOptionsSetWeightlessSourceModelBuffer`（#424） | `SessionOptions.SetWeightlessSourceModelBuffer` |
 | 1.30 | `KernelContext_GetPreallocatedOutput`（#425） | 底层 `ortApi.KernelContext_GetPreallocatedOutput` |
+| 1.31 | `SessionOptionsSetEpContextDataReadFunc`（#426） | 底层 `ortApi.SessionOptionsSetEpContextDataReadFunc` |
+| 1.31 | `GetModelPackageApi`（#427） | 底层 `ortApi.GetModelPackageApi` |
 
 ### 版本协商（自动降级）
 
 引擎兼容旧版运行时：若请求（或默认）版本不可用，自动降级到所加载库支持的最高版本并输出警告。
 
 ```go
-engine, err := ort.NewEngine(libPath, ort.WithApiVersion(ort.ApiVersion30))
+engine, err := ort.NewEngine(libPath, ort.WithApiVersion(ort.ApiVersion31))
 if err != nil {
     log.Fatal(err)
 }
 defer engine.Destroy()
 
-// 实际协商到的版本（1.30+ 库上为 30，旧库自动降低）
+// 实际协商到的版本（1.31+ 库上为 31，旧库自动降低）
 apiver := engine.GetApiVersion()
-ortVersion := engine.GetVersion() // 例如 "1.30.0"
+ortVersion := engine.GetVersion() // 例如 "1.31.1"
 ```
 
 ### 1.29：无权重 EPContext 的内存源模型
@@ -409,6 +411,15 @@ defer session.Destroy()
 ### 1.30：自定义 kernel 的预分配输出
 
 `KernelContext_GetPreallocatedOutput`（OrtApi #425）允许自定义 Op kernel 在 `Compute` 内借用调用方预分配的输出 `OrtValue`，避免输出拷贝。本仓在 `ortApi` 结构体层面完成绑定（`KernelContext_GetPreallocatedOutput`，API 版本 ≥ 30 时注册），供通过原始 API 函数表开发 kernel 的作者使用；本仓高层 vision/session API 不直接使用它。字段为 nil 表示所加载运行时早于 1.30。
+
+### 1.31：外部 EPContext 数据回调与 Model Package API
+
+ORT 1.31 在 `OrtApi` 末尾追加两个函数，API 版本 ≥ 31 时注册（字段为 nil 表示所加载运行时早于 1.31）：
+
+- `SessionOptionsSetEpContextDataReadFunc`（#426）——注册应用自行管理的外部 EPContext 二进制数据读取回调（`OrtReadNamedBufferFunc`），用于 session 初始化阶段。传 NULL 清除已注册的回调。声明 `OrtEpContextDataCallbackSupportFlags_READ` 的 EP 会从其 `OrtEpContextConfig` 取用该回调；若外部 EPContext 节点被分配到不支持 READ 的 EP，session 初始化会在该 EP 的 `Compile()` 前直接失败。
+- `GetModelPackageApi`（#427）——返回稳定的 `OrtModelPackageApi` 表（Model Package 选项/上下文检视、组件与变体选择、以及按选中变体创建 session）。该表由 ONNX Runtime 拥有，不需释放。
+
+两者均仅在 `ortApi` 结构体层面绑定（沿用 1.30 的做法）：本仓高层 vision/session API 目前尚未使用 Model Package。
 
 ## 依赖
 

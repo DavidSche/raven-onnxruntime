@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// libPath is the ONNX Runtime 1.30.0 GPU (CUDA 12) DLL used for integration testing.
-const libPath = `E:\study-place\Davidche\2026\raven\lib\onnxruntime-win-x64-gpu_cuda12-1.30.0\lib\onnxruntime.dll`
+// libPath is the ONNX Runtime 1.31.1 GPU (CUDA 12) DLL used for integration testing.
+const libPath = `E:\study-place\Davidche\2026\raven\lib\onnxruntime-win-x64-gpu_cuda12-1.31.1\lib\onnxruntime.dll`
 
 // staticModelPath: 静态输入 [1,3,1024,1024] 的 ONNX 模型，用于 GetInputShape 回归测试。
 const staticModelPath = `E:\study-place\Davidche\2026\raven\raven-go\models\yolo11\yolo11m-obb.onnx`
@@ -63,10 +63,31 @@ func TestEngineVersion(t *testing.T) {
 	t.Logf("ONNX Runtime version: %s", v)
 
 	apiV := eng.GetApiVersion()
-	if apiV != ApiVersion30 {
-		t.Fatalf("expected API version 30 (ONNX Runtime 1.30.0), got %d", apiV)
+	if apiV != ApiVersion31 {
+		t.Fatalf("expected API version 31 (ONNX Runtime 1.31.1), got %d", apiV)
 	}
 	t.Logf("API version: %d", apiV)
+}
+
+// TestNewApis_Ort131Bindings verifies the ORT 1.31+ entries of the OrtApi table
+// were registered on the engine (SessionOptionsSetEpContextDataReadFunc #426,
+// GetModelPackageApi #427). Binding them proves the ortApi struct layout still
+// matches the native table; calling them is exercised at the low level only.
+func TestNewApis_Ort131Bindings(t *testing.T) {
+	eng := newTestEngine(t)
+
+	if eng.funcs.setEpContextDataReadFunc == nil {
+		t.Fatal("SessionOptionsSetEpContextDataReadFunc (OrtApi #426) not bound on ONNX Runtime 1.31+")
+	}
+	if eng.funcs.getModelPackageApi == nil {
+		t.Fatal("GetModelPackageApi (OrtApi #427) not bound on ONNX Runtime 1.31+")
+	}
+
+	// The model package table is owned by ONNX Runtime and must be non-nil.
+	if table := eng.funcs.getModelPackageApi(); table == nil {
+		t.Fatal("GetModelPackageApi returned nil table")
+	}
+	t.Log("ORT 1.31 API entries bound (setEpContextDataReadFunc, getModelPackageApi)")
 }
 
 // TestAvailableProviders verifies that AvailableProviders returns a non-empty list.

@@ -7,10 +7,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/up-zero/gotool/convertutil"
+
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
 	"github.com/DavidSche/raven-onnxruntime/ort/ortlog"
 	"github.com/DavidSche/raven-onnxruntime/vision"
-	"github.com/up-zero/gotool/convertutil"
 )
 
 type DetEngine struct {
@@ -50,9 +51,9 @@ func NewDetEngine(cfg Config) (*DetEngine, error) {
 	detectedSize, dynamicBatch := detectInputSizeAndDynamicBatch(cfg.ModelPath)
 	if cfg.InputSize != 0 && cfg.InputSize != detectedSize {
 		ortlog.Warnw("input_size mismatch, overriding with detected value",
-		"configured", cfg.InputSize,
-		"detected", detectedSize,
-		"modelPath", cfg.ModelPath)
+			"configured", cfg.InputSize,
+			"detected", detectedSize,
+			"modelPath", cfg.ModelPath)
 	}
 	cfg.InputSize = detectedSize
 	if !cfg.DynamicBatch {

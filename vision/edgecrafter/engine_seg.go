@@ -7,10 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/up-zero/gotool/convertutil"
+
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
 	"github.com/DavidSche/raven-onnxruntime/ort/ortlog"
 	"github.com/DavidSche/raven-onnxruntime/vision"
-	"github.com/up-zero/gotool/convertutil"
 )
 
 // SegEngine is the EdgeCrafter segmentation engine.

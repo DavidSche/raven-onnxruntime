@@ -59,6 +59,19 @@ func NewEngine(cfg Config) (*Engine, error) {
 		onnxConfig.Destroy()
 		return nil, err
 	}
+	if cfg.ModelKind == modelKindPatchcore {
+		actualRuntimeHash, err := canonicalRawJSONHash(patchCoreRuntimeConfig(&cfg, selectedProvider, epFallback))
+		if err != nil {
+			sessionOptions.Destroy()
+			onnxConfig.Destroy()
+			return nil, fmt.Errorf("%w: cannot canonicalize actual PatchCore runtime configuration: %v", ErrInvalidConfig, err)
+		}
+		if actualRuntimeHash != cfg.RuntimeConfigHash {
+			sessionOptions.Destroy()
+			onnxConfig.Destroy()
+			return nil, fmt.Errorf("%w: actual PatchCore ORT session configuration %s does not match runtime_config_hash %s", ErrInvalidContract, actualRuntimeHash, cfg.RuntimeConfigHash)
+		}
+	}
 	session, err := onnxConfig.OnnxEngine.NewSession(cfg.ModelPath, sessionOptions)
 	if err != nil {
 		sessionOptions.Destroy()
@@ -128,6 +141,14 @@ func validateRuntimeConfig(cfg *Config) error {
 	}
 	if cfg.PreprocessContract.Normalize != normalizeDivide255 && cfg.PreprocessContract.Normalize != normalizeImageNet {
 		return fmt.Errorf("%w: unsupported preprocess normalization %q", ErrInvalidConfig, cfg.PreprocessContract.Normalize)
+	}
+	if cfg.ModelKind == modelKindPatchcore {
+		if cfg.PreprocessContract.Normalize != normalizeImageNet {
+			return fmt.Errorf("%w: PatchCore requires ImageNet normalization", ErrInvalidContract)
+		}
+		if cfg.RuntimeConfigHash == "" {
+			return fmt.Errorf("%w: PatchCore runtime_config_hash is required", ErrInvalidContract)
+		}
 	}
 	if cfg.PreprocessContract.ResizeKind != "stretch" || cfg.PreprocessContract.TensorLayout != "NCHW" {
 		return fmt.Errorf("%w: anomaly-v1 requires stretch resize and NCHW tensors", ErrInvalidConfig)
@@ -287,8 +308,12 @@ func validateONNXGraph(session *ort.Session, cfg Config) (Config, error) {
 	if len(shape) != 4 {
 		return cfg, fmt.Errorf("%w: input shape %v, want [B,3,H,W]", ErrInvalidContract, shape)
 	}
-	if !isDynamicDimension(shape[0]) || shape[1] != 3 || shape[2] < 1 || shape[3] < 1 {
-		return cfg, fmt.Errorf("%w: input shape %v is not a dynamic batch RGB tensor", ErrInvalidContract, shape)
+	staticSingleBatch := cfg.ModelKind == modelKindPatchcore && shape[0] == 1
+	if !isDynamicDimension(shape[0]) && !staticSingleBatch {
+		return cfg, fmt.Errorf("%w: input shape %v has an unsupported batch dimension", ErrInvalidContract, shape)
+	}
+	if shape[1] != 3 || shape[2] < 1 || shape[3] < 1 {
+		return cfg, fmt.Errorf("%w: input shape %v is not an RGB tensor", ErrInvalidContract, shape)
 	}
 	height, width := int(shape[2]), int(shape[3])
 	if cfg.InputSize != (image.Point{X: width, Y: height}) {

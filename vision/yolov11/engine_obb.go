@@ -5,9 +5,10 @@ import (
 	"image"
 	"math"
 
+	"github.com/up-zero/gotool/convertutil"
+
 	ort "github.com/DavidSche/raven-onnxruntime/ort"
 	"github.com/DavidSche/raven-onnxruntime/vision"
-	"github.com/up-zero/gotool/convertutil"
 )
 
 // OBBEngine YOLOv11-OBB Engine

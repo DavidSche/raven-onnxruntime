@@ -1,11 +1,12 @@
 package vision
 
 import (
-	"github.com/up-zero/gotool/imageutil"
 	"image/color"
 	"image/draw"
 	"path/filepath"
 	"testing"
+
+	"github.com/up-zero/gotool/imageutil"
 )
 
 func TestDrawer_DrawText(t *testing.T) {
@@ -26,5 +27,7 @@ func TestDrawer_DrawText(t *testing.T) {
 	}
 
 	d.DrawText(srcImage, "Hello World", 10, 10, color.Black)
-	imageutil.Save(filepath.Join(t.TempDir(), "draw.png"), srcImage, 100)
+	if err := imageutil.Save(filepath.Join(t.TempDir(), "draw.png"), srcImage, 100); err != nil {
+		t.Fatalf("failed to save drawn image: %v", err)
+	}
 }

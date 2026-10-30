@@ -5,10 +5,11 @@ import (
 	"image"
 	"sync"
 
-	ort "github.com/DavidSche/raven-onnxruntime/ort"
-	"github.com/DavidSche/raven-onnxruntime/vision"
 	"github.com/up-zero/gotool/convertutil"
 	"github.com/up-zero/gotool/imageutil"
+
+	ort "github.com/DavidSche/raven-onnxruntime/ort"
+	"github.com/DavidSche/raven-onnxruntime/vision"
 )
 
 type Engine struct {

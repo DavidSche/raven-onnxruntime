@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"image/draw"
 	"math"
 	"os"
 	"strings"
@@ -14,10 +13,6 @@ import (
 )
 
 var colorGray255 = color.Gray{Y: 255}
-
-// ImageNet normalization constants (same as EdgeCrafter training)
-var imagenetMeans = [3]float32{0.485, 0.456, 0.406}
-var imagenetStds = [3]float32{0.229, 0.224, 0.225}
 
 // EdgeCrafter model resolutions by name
 var ecModelResolutions = map[string]int{
@@ -36,7 +31,6 @@ var ecModelResolutions = map[string]int{
 }
 
 type imageParams struct {
-	tpadX, padY  int
 	origW, origH int
 }
 
@@ -73,9 +67,7 @@ func parseOnnxInputSizeAndDynamicBatch(modelPath string) (int, bool, error) {
 }
 
 type onnxInputInfo struct {
-	name         string
 	dims         []int64
-	dtype        int32
 	dynamicBatch bool
 }
 
@@ -337,53 +329,4 @@ func resizeMask(maskData []float32, maskH, maskW int, origBox image.Rectangle, o
 	}
 
 	return finalMask
-}
-
-type rawRGBImage interface {
-	RawRGB() ([]byte, int)
-}
-
-func fillCHWFromImage(data []float32, img image.Image, inputSize int) {
-	planeSize := inputSize * inputSize
-
-	switch src := img.(type) {
-	case rawRGBImage:
-		pix, stride := src.RawRGB()
-		for y := 0; y < inputSize; y++ {
-			rowBase := y * stride
-			dstBase := y * inputSize
-			for x := 0; x < inputSize; x++ {
-				srcIdx := rowBase + x*3
-				dstIdx := dstBase + x
-				data[dstIdx] = (float32(pix[srcIdx])/255.0 - imagenetMeans[0]) / imagenetStds[0]
-				data[planeSize+dstIdx] = (float32(pix[srcIdx+1])/255.0 - imagenetMeans[1]) / imagenetStds[1]
-				data[2*planeSize+dstIdx] = (float32(pix[srcIdx+2])/255.0 - imagenetMeans[2]) / imagenetStds[2]
-			}
-		}
-	case *image.RGBA:
-		fillCHWFromRGBA(data, src.Pix, src.Stride, inputSize)
-	case *image.NRGBA:
-		rgba := image.NewRGBA(src.Bounds())
-		draw.Draw(rgba, rgba.Bounds(), src, src.Bounds().Min, draw.Src)
-		fillCHWFromRGBA(data, rgba.Pix, rgba.Stride, inputSize)
-	default:
-		rgba := image.NewRGBA(img.Bounds())
-		draw.Draw(rgba, rgba.Bounds(), img, img.Bounds().Min, draw.Src)
-		fillCHWFromRGBA(data, rgba.Pix, rgba.Stride, inputSize)
-	}
-}
-
-func fillCHWFromRGBA(data []float32, pix []byte, stride, inputSize int) {
-	planeSize := inputSize * inputSize
-	for y := 0; y < inputSize; y++ {
-		rowBase := y * stride
-		dstBase := y * inputSize
-		for x := 0; x < inputSize; x++ {
-			srcIdx := rowBase + x*4
-			dstIdx := dstBase + x
-			data[dstIdx] = (float32(pix[srcIdx])/255.0 - imagenetMeans[0]) / imagenetStds[0]
-			data[planeSize+dstIdx] = (float32(pix[srcIdx+1])/255.0 - imagenetMeans[1]) / imagenetStds[1]
-			data[2*planeSize+dstIdx] = (float32(pix[srcIdx+2])/255.0 - imagenetMeans[2]) / imagenetStds[2]
-		}
-	}
 }
